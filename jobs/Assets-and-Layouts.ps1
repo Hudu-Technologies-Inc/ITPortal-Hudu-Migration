@@ -1,45 +1,126 @@
-$exportLocation = $exportLocation ?? (Read-Host "please enter the full path to your export.")
-$hudubaseUrl    = $hudubaseUrl    ?? (Read-Host "please enter the hudubase url.")
-$huduapikey     = $huduapikey     ?? (Read-Host "please enter your hudu api key.")
-$internalCompanyName = $internalCompanyName ?? (Read-Host "please enter the internal company name to use for assets without a company.")
 
-if (-not (Test-Path -Path $exportLocation)) {
-    Write-Error "The specified path does not exist: $exportLocation"; exit;
-} else {
-    write-host "Using export location: $exportLocation"
-}
-$ITPortalData = $ITPortalData ?? @{}
 
-foreach ($f in Get-ChildItem -Path $exportLocation -Recurse -File -Filter "*.txt") {
-    Write-Host "reading $($f.FullName)"
-    $contents = Get-Content $f.FullName -Raw
-    $ITPortalData["$($f.BaseName)"] = $ITPortalData["$($f.BaseName)"] ??  @{CsvData = @(); TxtData = @()}
-    $ITPortalData["$($f.BaseName)"].TxtData+=@{ filename = $f.FullName; content = $contents; name = $f.BaseName}
-}
-
-# Import & populate ITPortalData
-foreach ($f in Get-ChildItem -Path $exportLocation -Recurse -File -Filter "*.csv") {
-    Write-Host "reading $($f.FullName)"
-
-    $contents = Import-Csv $f.FullName
-
-    $key = $f.BaseName
-
-    $ITPortalData[$key] = @{
-        Filename   = $f.FullName
-        CsvData    = @($contents)
-        Properties = (Get-CSVProperties $contents)  # assuming this returns header names
-    }
-}
-$huducompanies = get-huducompanies
+$ITPortalData = @{}
 $companyMap = @{}
 $assetsMap = @{}
+$specialObjectTypes = @{
+    "kbs"                           = "articles"
+    "documents"                     = "articles"
+    # "passwords-devices"             = "assetpasswords"
+    # "passwords-fieldpasswords"      = "assetpasswords"
+    # "passwords-localPasswords"      = "assetpasswords"
+    # "passwords-accounts"            = "assetpasswpords"
+    "companies"                     = "companies"
+    "ipnetworks"                    = "ipam"
+}
 
-$discernment = 3092
+$companyPropMap = @{
+    nickname            = "Nickname"
+    address_line_1      = "AddressLine1"
+    address_line_2      = "AddressLine2"
+    city                = "City"
+    state               = "State"
+    zip                 = "Zip"
+    notes               = "Notes"
+    country_name        = "CountryName"
+    company_type        = "CompanyType"
+    phone_number        = "PhoneNumber"
+    fax_number          = "FaxNumber"
+    website             = "NewWebsite"
+}
+
+
+$articlesPropMap = @{
+    docname             = "Name"
+    documenttype        = "Folder"
+    description         = "Header"
+    link                = "Header"
+    doc                 = "Content"
+    filecontenttype     = "MimeType"
+}
+
+$discernment = 4096
 $position = 0
+
 foreach ($key in $ITPortalData.Keys) {
-    $position ++
+
     $csvRows = @($ITPortalData[$key].CsvData)
+    if ($specialObjectTypes.keys -contains $key.ToLowerInvariant()){
+        $SpecialObjectType = $specialObjectTypes["$($key.ToLowerInvariant())"] ?? $null
+        if ($null -eq $SpecialObjectType){write-host "No target for special object type $key"; continue;}
+        write-host "Processing objects in $key as $SpecialObjectType"
+        if ($SpecialObjectType -eq "companies"){
+            write-host "updating details for $($ITPortalData.Companies.CsvData.Company_name.count) companies"
+            foreach ($row in $csvRows) {
+            
+                $huduCompaniesRef = [ref]$huduCompanies
+                $company = Ensure-HuduCompany -Row $row -InternalCompanyName $internalcompanyName -CompanyMap $CompanyMap -HuduCompanies $huduCompaniesRef
+                $companyUpdateRequest = @{
+                    Id = $company.id
+                    Name = $company.name
+
+                }
+                foreach ($prop in $companyPropMap){
+                    $val = $null
+                    $rowVal = [string]$rowVal
+                    if ([string]::IsNullOrWhiteSpace($rowVal)) { continue }
+                    $huduField = $companyPropMap[$key]
+                    if ($hudufield -ieq "NewWebsite"){
+                        $url = Normalize-WebURL $val
+                        $website = Get-HuduWebsites | where-object {$_.name -ieq $url} | select-object -first 1
+                        if ($null -ne $website -and $null -ne $website.id){continue}
+                        $website = New-HuduWebsite -companyId $company.id -name $url
+                        continue
+                    }
+                    $companyUpdateRequest["$huduField"]=$rowVal                    
+                }
+                try {
+                    $companyDetails = set-huducompany @companyRequest
+                } catch {
+                    write-error "error updating company $_"
+                }
+            }
+            continue
+        } elseif ($key -ieq "documents") {
+            foreach ($row in $csvRows) {
+                $content = $row.doc ?? $null
+                $title = $row.docname ?? $row.description ?? $row.FileName  ?? "Unnamed Document $(Get-Random -minimum 111111 -maximum 999999)"
+
+                if ([string]::isnullorempty($content)) {
+                    $foundFile = Get-Childitem -path $documentExports -recurse -File -Filter $row.FileName | select-object -first 1
+                    if ($null -ne $foundFile){
+                        write-host "using $($foundFile.fullname) for document contents in doc id $($row.DocumentId)"
+                        $content = Get-Content -path $foundFile.fullname -raw
+                    }
+
+                    if ([string]::isnullorempty($content) -and -not ([string]::isnullorempty($row.link))){
+                        $content = "<H2><A href='$(Normalize-WEbURL $row.link)'>Link to $title</A></H2>"
+                    }
+                }
+
+
+                if ([string]::isnullorempty($content)) {
+                    write-host "doc content is absent between embedded content and file. skipping"
+                    continue
+                }
+                $huduCompaniesRef = [ref]$huduCompanies
+                $company = Ensure-HuduCompany -Row $row -InternalCompanyName $internalcompanyName -CompanyMap $CompanyMap -HuduCompanies $huduCompaniesRef
+
+                $ArticleRequest = @{
+                    content     = $content
+                    name        = $title
+                    companyId   = $company.id
+                }
+            }
+        }
+        continue
+    } else {
+        write-host "Processing $key as asset"
+    }
+
+
+    $position ++
+
 
     if (-not $csvRows -or $csvRows.Count -eq 0) {
         Write-Host "Loaded $key with 0 CSV rows; skipping type discernment"
@@ -52,10 +133,11 @@ foreach ($key in $ITPortalData.Keys) {
     $layoutRequest = @{
          Name   = $key; Fields = @();
          icon="fas fa-person"; color="#6136ff"; icon_color="#ffffff"; include_passwords=$true; include_photos=$true; include_comments=$true; include_files=$true;
-
     }
 
+    #designate fields
     foreach ($label in $ITPortalData[$key].Properties) {
+        if ($label -ieq "Company"){continue}
 
         if (LabelIsSecret -Label $label) {
             Write-Host "`tField '$label' identified as ConfidentialText Field" -ForegroundColor cyan
@@ -72,10 +154,6 @@ foreach ($key in $ITPortalData.Keys) {
         } elseif (LabelIsWebsite -label $label) {
             Write-Host "`tField '$label' identified as Website Field" -ForegroundColor cyan
             $layoutRequest.Fields += @{label = $label; field_type = "Website"; required=$false; position = $position;}
-            continue
-        } elseif (LabelIsNumber -label $label) {
-            Write-Host "`tField '$label' identified as Number Field" -ForegroundColor cyan
-            $layoutRequest.Fields += @{label = $label; field_type = "Number"; required=$false; position = $position;}
             continue
         }
         
@@ -135,40 +213,8 @@ foreach ($key in $ITPortalData.Keys) {
     $ITPortalData[$key] | Add-Member -MemberType NoteProperty -Name "AssetLayout" -Value $AL -Force
 
     foreach ($row in $csvRows) {
-
-        $companyName = $row.PSObject.Properties["Company"]?.Value
-
-        if ([string]::IsNullOrWhiteSpace($companyName)) {
-            $companyName = $internalCompanyName
-        }
-        $company = $null
-        if ($companyMap.ContainsKey($companyName)) {
-            $company = $companyMap[$companyName]
-        } 
-        
-        $company = $company ?? $(Get-HuduCompanyFromName -CompanyName $companyName -HuduCompanies $huducompanies)
-        if (-not $company) {
-            $huducompanies = get-huducompanies
-            $company = $(Get-HuduCompanyFromName -CompanyName $companyName -HuduCompanies $huducompanies)
-        }
-        $company = $company.company ?? $company
-        if (-not $company) {
-            Write-Host "Creating company '$companyName' for asset '$($row.name ?? $row.PSObject.Properties[0].Value)'" -ForegroundColor Yellow
-            $companyRequest = @{
-                Name = $companyName
-            }
-            $company = New-HuduCompany @companyRequest; $company = $company.company ?? $company;
-            $company = get-huducompanies -id $company.id
-        } else {
-            Write-Host "Using existing company '$companyName' for asset '$($row.name ?? $row.PSObject.Properties[0].Value)'" -ForegroundColor Green
-        }
-        if (-not $company) {
-            Write-Error "Failed to create or retrieve company '$companyName' for asset '$($row.name ?? $row.PSObject.Properties[0].Value)'; skipping asset creation."
-            continue
-        }
-        if (-not $companyMap.ContainsKey($companyName)) {
-            $companyMap["$companyName"] = $company
-        }
+        $huduCompaniesRef = [ref]$huduCompanies
+        $company = Ensure-HuduCompany -Row $row -InternalCompanyName $internalcompanyName -CompanyMap $CompanyMap -HuduCompanies $huduCompaniesRef
         $GivenName = $row.name ?? $row.PSObject.Properties[0].Value ?? "Unnamed $key Asset $($($([Guid]::NewGuid().ToString()) -split "-")[0])"
 
         $assetRequest = @{

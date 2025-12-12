@@ -48,7 +48,7 @@ function LabelIsNumber {
     param ([string]$label)
     if ([string]::IsNullOrWhiteSpace($label)) { return $false }
 
-    $numberKeywords = @('number','count','quantity',"# of")
+    $numberKeywords = @('number','quantity',"# of")
     foreach ($kw in $numberKeywords) {
         if ($label.ToLower().Contains($kw)) {
             return $true
@@ -207,6 +207,88 @@ $PHONE_LABELS     = @('phone','phone number','primary phone','work phone','offic
         "window-close"         = "window-close"
     
     }
+
+function Ensure-HuduCompany {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Row,
+
+        [Parameter(Mandatory)]
+        [string]$InternalCompanyName,
+
+        [Parameter(Mandatory)]
+        [hashtable]$CompanyMap,
+
+        # ref cached "all companies" list
+        [Parameter(Mandatory)]
+        [ref]$HuduCompanies
+    )
+
+    $companyName = $Row.PSObject.Properties['Company']?.Value
+    $companyName = $companyName ?? $Row.PSObject.Properties['company_name']?.Value
+
+    if ([string]::IsNullOrWhiteSpace($companyName)) {
+        $companyName = $InternalCompanyName
+    }
+
+    $company = $null
+
+    if ($CompanyMap.ContainsKey($companyName)) {
+        $company = $CompanyMap[$companyName]
+    }
+    else {
+        $company = Get-HuduCompanyFromName -CompanyName $companyName -HuduCompanies $HuduCompanies.Value
+
+        if (-not $company) {
+            $HuduCompanies.Value = Get-HuduCompanies
+            $company = Get-HuduCompanyFromName -CompanyName $companyName -HuduCompanies $HuduCompanies.Value
+        }
+
+        if (-not $company) {
+            Write-Host "Creating company '$companyName' for object" -ForegroundColor Yellow
+
+            $companyRequest = @{
+                Name = $companyName
+            }
+
+            $company = New-HuduCompany @companyRequest
+            $company = $company.company ?? $company
+
+            # Optional: re-fetch to get normalized shape
+            if ($company -and $company.id) {
+                $company = Get-HuduCompanies -Id $company.id
+                $company = $company.company ?? $company
+            }
+
+            if ($company) {
+                if ($HuduCompanies.Value) {
+                    $HuduCompanies.Value += $company
+                }
+                else {
+                    $HuduCompanies.Value = @($company)
+                }
+            }
+        }
+        else {
+            $company = $company.company ?? $company
+            Write-Host "Using existing company '$companyName' for object" -ForegroundColor Green
+        }
+        if ($company) {
+            $CompanyMap[$companyName] = $company
+        }
+    }
+
+    if (-not $company) {
+        Write-Error "Failed to create or retrieve company '$companyName' for object"
+        return $null
+    }
+
+    return $company
+}
+
+
+
 function Test-TruthyFalsy {
     param([string]$Value)
 
