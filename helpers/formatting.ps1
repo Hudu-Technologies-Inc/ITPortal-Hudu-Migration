@@ -35,7 +35,7 @@ function LabelIsWebsite {
     param ([string]$label)
     if ([string]::IsNullOrWhiteSpace($label)) { return $false }
 
-    $websiteKeywords = @('website','web site','url','link','homepage','site','webpage','web page')
+    $websiteKeywords = @('website','website','url','link','homepage','webpage','web page')
     foreach ($kw in $websiteKeywords) {
         if ($label.ToLower().Contains($kw)) {
             return $true

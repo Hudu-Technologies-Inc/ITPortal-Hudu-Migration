@@ -1,9 +1,8 @@
 
 
-$companyMap = @{}
-$assetsMap = @{}
-
-
+$companyMap = @{}; $assetsMap = @{};
+$huducompanies = $huducompanies ?? $(get-huducompanies)
+$locationLayout = $locationLayout ?? $null
 $specialObjectTypes = @{
     "kbs"                           = "articles"
     "documents"                     = "articles"
@@ -42,9 +41,16 @@ $articlesPropMap = @{
 }
 
 $discernment = 4096
-$position = 0
 
-foreach ($key in $ITPortalData.Keys) {
+
+$orderedKeys = $ITPortalData.Keys | Sort-Object {switch ($_) {
+                                                'Sites'     { 0 }
+                                                'Companies' { 1 }
+                                                default     { 2 }
+                                            }}, { $_ }
+
+
+foreach ($key in $orderedKeys) {
 
     $csvRows = @($ITPortalData[$key].CsvData)
     if ($specialObjectTypes.keys -contains $key.ToLowerInvariant()){
@@ -180,16 +186,12 @@ foreach ($key in $ITPortalData.Keys) {
     } else {
         write-host "Processing $key as asset"
     }
-
-
-    $position ++
-
-
+    $position = 0
     if (-not $csvRows -or $csvRows.Count -eq 0) {
         Write-Host "Loaded $key with 0 CSV rows; skipping type discernment"
         continue
     }
-
+    $position ++
     $rowLimit = [Math]::Min($discernment, $csvRows.Count)
     Write-Host "Loaded $key with $($csvRows.Count) CSV rows; discerning types with resolution $rowLimit"
 
@@ -201,6 +203,14 @@ foreach ($key in $ITPortalData.Keys) {
     #designate fields
     foreach ($label in $ITPortalData[$key].Properties) {
         if ($label -ieq "Company"){continue}
+        if ($label -ieq "SiteId" -or $label -ieq "SiteTwoID"){
+            if ($null -ne $locationLayoutId -and $null -ne $locationLayout.id){
+                Write-Host "`tField '$label' identified as Location Field as linkable: $($locationlayout.id)" -ForegroundColor cyan
+                $layoutRequest.Fields += @{label = $label; field_type = "AssetLink"; required=$false; position = $position; linkable_id=$locationLayout.id;}
+                continue
+            }
+        }
+        
 
         if (LabelIsSecret -Label $label) {
             Write-Host "`tField '$label' identified as ConfidentialText Field" -ForegroundColor cyan
@@ -265,12 +275,16 @@ foreach ($key in $ITPortalData.Keys) {
         Write-Host "Asset Layout '$($al.name)' (ID: $($al.id)) already exists; using existing layout." -ForegroundColor Yellow
     } else {
         $AL = new-huduassetlayout @layoutRequest; $Al = $AL.asset_layout ?? $AL;
+
+        $null = Set-HuduAssetLayout -id $al.id -Active $true
         $AL = get-huduassetlayouts -id $Al.id; $al = $AL.asset_layout ?? $AL;
+
         write-host "Created/Using Asset Layout '$($al.name)' (ID: $($al.id)) for type '$key'" -ForegroundColor Green
     }
-    
-
     $ALFields = $al.fields
+    if ($key -ieq "sites"){
+        $locationLayout = $al
+    }
 
 
     $ITPortalData[$key] | Add-Member -MemberType NoteProperty -Name "AssetLayout" -Value $AL -Force

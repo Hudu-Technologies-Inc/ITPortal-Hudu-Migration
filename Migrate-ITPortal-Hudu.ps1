@@ -24,6 +24,6 @@ Get-PSVersionCompatible; Get-HuduModule; Set-HuduInstance; Get-HuduVersionCompat
 
 foreach ($job in $jobs){
     write-host "starting $job"
-        . "$project_workdir\jobs\$job.ps1"
+    . "$project_workdir\jobs\$job.ps1"
     write-host "finished $job"
 }
