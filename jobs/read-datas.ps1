@@ -28,50 +28,18 @@ foreach ($f in Get-ChildItem -Path $exportLocation -Recurse -File -Filter "*.csv
     $ITPortalData[$key] = @{
         Filename   = $f.FullName
         CsvData    = @($contents)
-        Properties = (Get-CSVPropertiesSafe $contents)  # assuming this returns header names
+        Properties = (Get-CSVPropertiesSafe$contents)  # assuming this returns header names
     }
 }
 $huducompanies = get-huducompanies
 $companyMap = @{}
 $assetsMap = @{}
-$specialObjectTypes = @{
-    "kbs"                           = "articles"
-    "documents"                     = "articles"
-    "passwords-devices"             = "assetpasswords"
-    "passwords-fieldpasswords"      = "assetpasswords"
-    "passwords-localPasswords"      = "assetpasswords"
-    "passwords-accounts"            = "assetpasswpords"
-    "companies"                     = "companies"
-    "ipnetworks"                    = "ipam"
-}
-
 
 $discernment = 3092
 $position = 0
-
-
-
 foreach ($key in $ITPortalData.Keys) {
-
-    $csvRows = @($ITPortalData[$key].CsvData)
-    if ($specialObjectTypes.keys -contains $key.ToLowerInvariant()){
-        $SpecialObjectType = $specialObjectTypes["$($key.ToLowerInvariant())"] ?? $null
-        if ($null -eq $SpecialObjectType){write-host "No target for special object type $key"; continue;}
-        write-host "Processing objects in $key as $SpecialObjectType"
-        if ($SpecialObjectType -eq "companies"){
-
-            
-        }
-
-
-
-
-
-    }
-
-
     $position ++
-
+    $csvRows = @($ITPortalData[$key].CsvData)
 
     if (-not $csvRows -or $csvRows.Count -eq 0) {
         Write-Host "Loaded $key with 0 CSV rows; skipping type discernment"
@@ -84,11 +52,10 @@ foreach ($key in $ITPortalData.Keys) {
     $layoutRequest = @{
          Name   = $key; Fields = @();
          icon="fas fa-person"; color="#6136ff"; icon_color="#ffffff"; include_passwords=$true; include_photos=$true; include_comments=$true; include_files=$true;
+
     }
 
-    #designate fields
     foreach ($label in $ITPortalData[$key].Properties) {
-        if ($label -ieq "Company"){continue}
 
         if (LabelIsSecret -Label $label) {
             Write-Host "`tField '$label' identified as ConfidentialText Field" -ForegroundColor cyan
