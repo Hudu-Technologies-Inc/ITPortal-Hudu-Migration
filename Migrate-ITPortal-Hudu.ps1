@@ -27,7 +27,7 @@ foreach ($job in $jobs){
     try {
         . "$project_workdir\jobs\$job.ps1"
     } catch {
-        write-error "error during $job: $_"
+        write-error "error during $job $_"
         $migrationerrors += @{job=$job; error = $_;}
     }
     write-host "finished $job"

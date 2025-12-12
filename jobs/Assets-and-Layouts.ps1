@@ -11,7 +11,7 @@ $specialObjectTypes = @{
     # "passwords-localPasswords"      = "assetpasswords"
     # "passwords-accounts"            = "assetpasswpords"
     "companies"                     = "companies"
-    "ipnetworks"                    = "ipam"
+    # "ipnetworks"                    = "ipam"
 }
 
 $companyPropMap = @{
@@ -173,9 +173,6 @@ foreach ($key in $ITPortalData.Keys) {
                 } catch {
                     write-error "error creating/updating article $_"
                 }
-
-
-
             }
         }
         continue
