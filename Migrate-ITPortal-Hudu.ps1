@@ -24,11 +24,6 @@ Get-PSVersionCompatible; Get-HuduModule; Set-HuduInstance; Get-HuduVersionCompat
 
 foreach ($job in $jobs){
     write-host "starting $job"
-    try {
         . "$project_workdir\jobs\$job.ps1"
-    } catch {
-        write-error "error during $job $_"
-        $migrationerrors += @{job=$job; error = $_;}
-    }
     write-host "finished $job"
 }
