@@ -1,0 +1,5 @@
+$exportLocation = "x:\itportalexport"
+$hudubaseurl = "yoururl.huducloud.com"
+$huduapikey="api key"
+$internalCompanyName = "Test Internal"
+. .\Migrate-ITPortal-Hudu.ps1
