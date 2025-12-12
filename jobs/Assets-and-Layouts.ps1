@@ -31,12 +31,13 @@ $companyPropMap = @{
 
 
 $articlesPropMap = @{
-    docname             = "Name"
+    DocumentId          = "Footer"
+    KBID                = "Footer"
     documenttype        = "Folder"
+    category            = "Folder"
+    subcategory         = "SubFolder"
     description         = "Header"
     link                = "Header"
-    doc                 = "Content"
-    filecontenttype     = "MimeType"
 }
 
 $discernment = 4096
@@ -81,10 +82,16 @@ foreach ($key in $ITPortalData.Keys) {
                 }
             }
             continue
-        } elseif ($key -ieq "documents") {
+        } elseif ($key -ieq "documents" -or $key -ieq "kbs"){
+            write-host "processing $($ITPortalData.$key.CsvData.count) $key as articles"
+            
             foreach ($row in $csvRows) {
                 $content = $row.doc ?? $null
-                $title = $row.docname ?? $row.description ?? $row.FileName  ?? "Unnamed Document $(Get-Random -minimum 111111 -maximum 999999)"
+                $title = $null; $company = $null; $existingArticle = $null;
+                $HuduBaseFolder = $null; $hudusecondaryFolder = $null;
+                $header = $null; $footer = $null; $folder = $null; $subfolder = $null;
+
+                $title = $row.docname ?? $row.KBName ?? $row.description ?? $row.FileName  ?? "Unnamed Document $(Get-Random -minimum 111111 -maximum 999999)"
 
                 if ([string]::isnullorempty($content)) {
                     $foundFile = Get-Childitem -path $documentExports -recurse -File -Filter $row.FileName | select-object -first 1
@@ -103,6 +110,26 @@ foreach ($key in $ITPortalData.Keys) {
                     write-host "doc content is absent between embedded content and file. skipping"
                     continue
                 }
+                foreach ($prop in $articlesPropMap.GetEnumerator()) {
+                    $val = $null
+                    $rowVal = [string]$row.$($prop.Key)
+                    if ([string]::IsNullOrWhiteSpace($rowVal)) { continue }
+                    $huduField = $articlesPropMap[$prop.Key]
+                    switch ($huduField) {
+                        "Folder" {$folder = $folder ?? $rowVal ?? $null}
+                        "SubFolder" {$subfolder = $subfolder ?? $rowVal ?? $null}
+                        "Header" {if ([string]::IsNullOrEmpty($header)) {$header = "<H2>$header</H2>"} else {$header = "<H2>$rowVal</H2>`n$header"}}
+                        "Footer" {if ([string]::IsNullOrEmpty($footer)) {$footer = "<H3>$footer</H3>"} else {$footer = "<H2>$rowVal</H2>`n$footer"}}
+                    }
+                }
+
+                if (-not [string]::IsNullOrEmpty($header)) {
+                    $content = "$header`n`n$content"
+                }
+                if (-not [string]::IsNullOrEmpty($footer)) {
+                    $content = "$content`n`n$footer"
+                }
+
                 $huduCompaniesRef = [ref]$huduCompanies
                 $company = Ensure-HuduCompany -Row $row -InternalCompanyName $internalcompanyName -CompanyMap $CompanyMap -HuduCompanies $huduCompaniesRef
 
@@ -111,6 +138,44 @@ foreach ($key in $ITPortalData.Keys) {
                     name        = $title
                     companyId   = $company.id
                 }
+                $existingArticle = Get-HuduArticles -CompanyId $company.id -name $title | select-object -first 1
+                $existingArticle = $existingArticle.article ?? $existingArticle
+                if ($null -ne $existingArticle){
+                    $ArticleRequest.Id = $existingArticle.id
+                }                
+
+                if ($null -ne $folder){
+                    $HuduBaseFolder = get-hudufolders -CompanyId $company.id -name $folder | select-object -first 1
+                    $HuduBaseFolder = $HuduBaseFolder.folder ?? $HuduBaseFolder;
+                    if ($null -eq $HuduBaseFolder){
+                        $HuduBaseFolder = New-HuduFolder -CompanyId $company.id -name $folder
+                        $HuduBaseFolder = $HuduBaseFolder.folder ?? $HuduBaseFolder;
+                    }
+                    $ArticleRequest["FolderId"] = $HuduBaseFolder.id
+                }
+                if ($null -ne $HuduBaseFolder -and $null -ne $subfolder){
+                    $hudusecondaryFolder = get-hudufolders -CompanyId $company.id -name $subfolder -parentFolderId $HuduBaseFolder.id | select-object -first 1
+                    $hudusecondaryFolder = $hudusecondaryFolder.folder ?? $hudusecondaryFolder;
+                    if ($null -eq $hudusecondaryFolder){
+                        $hudusecondaryFolder = New-HuduFolder -CompanyId $company.id -name $subfolder -parentFolderId $HuduBaseFolder.id
+                        $hudusecondaryFolder = $hudusecondaryFolder.folder ?? $hudusecondaryFolder;
+                    }
+                    $ArticleRequest["FolderId"] = $hudusecondaryFolder.id
+                }
+                try {
+                    if ($ArticleRequest.ContainsKey("Id") -and $null -ne $ArticleRequest.id){
+                        Set-HuduArticle @ArticleRequest
+                        write-host "Updated article '$title' for company '$($company.name)'"
+                    } else {
+                        New-HuduArticle @ArticleRequest
+                        write-host "Created article '$title' for company '$($company.name)'"
+                    }
+                } catch {
+                    write-error "error creating/updating article $_"
+                }
+
+
+
             }
         }
         continue
