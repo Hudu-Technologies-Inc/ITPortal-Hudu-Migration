@@ -1,8 +1,9 @@
 
 
-$ITPortalData = @{}
 $companyMap = @{}
 $assetsMap = @{}
+
+
 $specialObjectTypes = @{
     "kbs"                           = "articles"
     "documents"                     = "articles"

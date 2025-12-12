@@ -1,3 +1,5 @@
+$ITPortalData = @{}
+
 foreach ($f in Get-ChildItem -Path $exportLocation -Recurse -File -Filter "*.txt") {
     Write-Host "reading $($f.FullName)"
     $contents = Get-Content $f.FullName -Raw
