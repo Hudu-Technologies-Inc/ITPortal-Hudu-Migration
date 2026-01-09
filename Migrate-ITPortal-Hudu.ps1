@@ -2,6 +2,8 @@ $project_workdir = $PSScriptRoot
 $jobs = @(
 "read-datas",
 "Assets-and-Layouts"
+"Fetch-Docs"
+
 )
 
 $exportLocation = $exportLocation ?? (Read-Host "please enter the full path to your export.")

@@ -20,7 +20,7 @@ function New-ITPHttpClientFromBrowserDump {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][pscustomobject[]]$CookieJson,
-    [Parameter(Mandatory)][string]$BaseHost,           # e.g. "redacted.itportal.com"
+    [Parameter(Mandatory)][string]$ITPhostname,           # e.g. "redacted.itportal.com"
     [Parameter(Mandatory)][int]$UserId,                # e.g. 588
     [Parameter(Mandatory)][string]$PortalOriginUrl     # e.g. "https://redacted.itportal.com/v4/app/documents/733?ClientID=0"
   )
@@ -31,7 +31,7 @@ function New-ITPHttpClientFromBrowserDump {
   $handler.AutomaticDecompression = `
     [System.Net.DecompressionMethods]::GZip -bor [System.Net.DecompressionMethods]::Deflate
 
-  $baseUri = [Uri]("https://$BaseHost/")
+  $baseUri = [Uri]("https://$ITPhostname/")
 
   foreach ($c in $CookieJson) {
     if (-not $c.name -or -not $c.value) { continue }
@@ -61,7 +61,7 @@ function New-ITPHttpClientFromBrowserDump {
   # Only advertise encodings we can auto-decompress
   $client.DefaultRequestHeaders.TryAddWithoutValidation('Accept-Encoding', 'gzip, deflate') | Out-Null
 
-  $client.DefaultRequestHeaders.TryAddWithoutValidation('Referer', "https://$BaseHost/") | Out-Null
+  $client.DefaultRequestHeaders.TryAddWithoutValidation('Referer', "https://$ITPhostname/") | Out-Null
   $client.DefaultRequestHeaders.TryAddWithoutValidation('UserID', "$UserId") | Out-Null
   $client.DefaultRequestHeaders.TryAddWithoutValidation('X-Portal-AppVersion', '/v4') | Out-Null
   $client.DefaultRequestHeaders.TryAddWithoutValidation('X-Portal-Origin', $PortalOriginUrl) | Out-Null
@@ -107,11 +107,17 @@ function Get-ItPortalDocument {
   }
 
   # If still HTML, dump a readable snippet (after gzip/deflate auto-decompress should already be applied)
-  if ($ct -match 'text/html') {
-    $head = [Text.Encoding]::UTF8.GetString($bytes, 0, [Math]::Min(800, $bytes.Length))
-    throw "Got HTML instead of file. Content-Type=$ct. Body(head)=$head"
-  }
+  # if ($ct -match 'text/html') {
+  #   $head = [Text.Encoding]::UTF8.GetString($bytes, 0, [Math]::Min(800, $bytes.Length))
+  #   throw "Got HTML instead of file. Content-Type=$ct. Body(head)=$head"
+  # }
 
   [IO.File]::WriteAllBytes($outFile, $bytes)
-  return (Resolve-Path $outFile).Path
+  try {
+    $completedpath = (Resolve-Path $outFile).Path
+    return $completedpath
+  } catch {
+    write-host $_
+    return $outFile
+  }
 }

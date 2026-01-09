@@ -101,7 +101,7 @@ foreach ($key in $orderedKeys) {
                 $title = $row.docname ?? $row.KBName ?? $row.description ?? $row.FileName  ?? "Unnamed Document $(Get-Random -minimum 111111 -maximum 999999)"
 
                 if ([string]::isnullorempty($content)) {
-                    $foundFile = Get-Childitem -path $documentExports -recurse -File -Filter $row.FileName | select-object -first 1
+                    $foundFile = Get-Childitem -path $ITPexports -recurse -File -Filter $row.FileName | select-object -first 1
                     if ($null -ne $foundFile){
                         write-host "using $($foundFile.fullname) for document contents in doc id $($row.DocumentId)"
                         $content = Get-Content -path $foundFile.fullname -raw
