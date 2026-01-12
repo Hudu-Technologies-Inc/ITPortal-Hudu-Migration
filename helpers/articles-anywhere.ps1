@@ -9,7 +9,108 @@ $rxCssUrl    = [Regex]::new('url\(\s*(["'']?)(?<u>[^)"'']+)\1\s*\)', [RegexOptio
 
 $huduapikey = $huduapikey ?? $(read-host "Please enter hudu api key")
 $hudubaseurl = $hudubaseurl ?? $(read-host "please enter hudu instance url")
+function Normalize-Text {
+    param([string]$s)
+    if ([string]::IsNullOrWhiteSpace($s)) { return $null }
+    $s = $s.Trim().ToLowerInvariant()
+    $s = [regex]::Replace($s, '[\s_-]+', ' ')  # "primary_email" -> "primary email"
+    # strip diacritics (prénom -> prenom)
+    $formD = $s.Normalize([System.Text.NormalizationForm]::FormD)
+    $sb = New-Object System.Text.StringBuilder
+    foreach ($ch in $formD.ToCharArray()){
+        if ([System.Globalization.CharUnicodeInfo]::GetUnicodeCategory($ch) -ne
+            [System.Globalization.UnicodeCategory]::NonSpacingMark) { [void]$sb.Append($ch) }
+    }
+    ($sb.ToString()).Normalize([System.Text.NormalizationForm]::FormC)
+}
+function Compare-StringsIgnoring {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string]$A,
+        [Parameter(Mandatory)] [string]$B,
+        $ignore = @(
+                '\bthe\b',
+                '\borg\b',
+                '\binc\b',
+                '\bpc\b',
+                '\band\b',
+                '\bltd\b',
+                '[\.,/&]'
+            ))
+    function _Normalize($s) {
+        $t = $s.ToLowerInvariant()
+        foreach ($pattern in $ignore) {
+            $t = $t -replace $pattern, ''
+        }
+        $t = ($t -replace '\s+', ' ').Trim()
+        return $t
+    }
 
+    $normA = _Normalize $A
+    $normB = _Normalize $B
+
+    return ($normA -eq $normB)
+}
+
+function Test-Equiv {
+    param([string]$A, [string]$B)
+    $a = Normalize-Text $A; $b = Normalize-Text $B
+    if (-not $a -or -not $b) { return $false }
+    if ($a -eq $b) { return $true }
+    $reA = "(^| )$([regex]::Escape($a))( |$)"
+    $reB = "(^| )$([regex]::Escape($b))( |$)"
+    if ($b -match $reA -or $a -match $reB) { return $true } 
+    if ($a.Replace(' ', '') -eq $b.Replace(' ', '')) { return $true }
+    return $false
+}
+function Get-Similarity {
+    param([string]$A, [string]$B)
+
+    $a = [string](Normalize-Text $A)
+    $b = [string](Normalize-Text $B)
+    if ([string]::IsNullOrEmpty($a) -and [string]::IsNullOrEmpty($b)) { return 1.0 }
+    if ([string]::IsNullOrEmpty($a) -or  [string]::IsNullOrEmpty($b))  { return 0.0 }
+
+    $n = [int]$a.Length
+    $m = [int]$b.Length
+    if ($n -eq 0) { return [double]($m -eq 0) }
+    if ($m -eq 0) { return 0.0 }
+
+    $d = New-Object 'int[,]' ($n+1), ($m+1)
+    for ($i = 0; $i -le $n; $i++) { $d[$i,0] = $i }
+    for ($j = 0; $j -le $m; $j++) { $d[0,$j] = $j }
+
+    for ($i = 1; $i -le $n; $i++) {
+        $im1 = ([int]$i) - 1
+        $ai  = $a[$im1]
+        for ($j = 1; $j -le $m; $j++) {
+            $jm1 = ([int]$j) - 1
+            $cost = if ($ai -eq $b[$jm1]) { 0 } else { 1 }
+
+            $del = [int]$d[$i,  $j]   + 1
+            $ins = [int]$d[$i,  $jm1] + 1
+            $sub = [int]$d[$im1,$jm1] + $cost
+
+            $d[$i,$j] = [Math]::Min($del, [Math]::Min($ins, $sub))
+        }
+    }
+
+    $dist   = [double]$d[$n,$m]
+    $maxLen = [double][Math]::Max($n,$m)
+    return 1.0 - ($dist / $maxLen)
+}
+function Get-SimilaritySafe { param([string]$A,[string]$B)
+    if ([string]::IsNullOrWhiteSpace($A) -or [string]::IsNullOrWhiteSpace($B)) { return 0.0 }
+    $score = Get-Similarity $A $B
+    write-host "$a ... $b SCORED $score"
+    return $score
+}
+
+function ChoseBest-ByName {
+    param ([string]$Name,[array]$choices,[string]$prop='name')
+return $($choices | ForEach-Object {
+[pscustomobject]@{Choice = $_; Score  = $(Get-SimilaritySafe -a "$Name" -b $_.$prop);}} | where-object {$_.Score -ge 0.97} | Sort-Object Score -Descending | select-object -First 1).Choice
+}
 function Get-NormalizedTitle([string]$s) {
   if ([string]::IsNullOrWhiteSpace($s)) { return '' }
   ([System.Web.HttpUtility]::HtmlDecode($s) -replace '\s+', ' ').Trim().ToLowerInvariant()

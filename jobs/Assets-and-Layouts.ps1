@@ -42,6 +42,11 @@ $IgnoreFields = @(
     "ContactID"
 
 )
+$PassTypes = @("Passwords-FieldPasswords","Passwords-Devices","Passwords-LocalPasswords","Passwords-Accounts")
+
+$SkipTables= @(
+    "Contacts"
+)
 
 # junk props to ignore for specific layouts
 $LayoutSpecificIgnoreFields = @{
@@ -86,16 +91,16 @@ $discernment = 4096
 
 
 $orderedKeys = $ITPortalData.Keys | Sort-Object {switch ($_) {
-                                                # 'Sites'     { 0 }
-                                                # 'Companies' { 1 }
-                                                # 'Devices'   { 2 }
+                                                'Sites'     { 0 }
+                                                'Companies' { 1 }
+                                                'Devices'   { 2 }
                                                 'Configurations'   { 3 }
-                                                # 'Contacts'   { 4 }
-                                                default     { 9 }
+                                                'Contacts'   { 9 }
+                                                default     { 8 }
                                             }}, { $_ }
 
 
-foreach ($key in $orderedKeys) {
+foreach ($key in $orderedKeys | where-object {$_ -notin $SkipTables -and $_ -notin $PassTypes}) {
 
     $csvRows = @($ITPortalData[$key].CsvData)
     if ($specialObjectTypes.keys -contains $key.ToLowerInvariant()){

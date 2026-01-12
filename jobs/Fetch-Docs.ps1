@@ -1,7 +1,7 @@
 foreach ($doc in $itportaldata.Documents.CsvData){
   # new client for XSSRF protection
   $expiryTimestamp = [math]::Round((([DateTimeOffset]::UtcNow.AddHours(6).UtcDateTime - [datetime]'1970-01-01').TotalSeconds), 6)
-  $client = $client = New-ITPHttpClientFromBrowserDump -CookieJson $CookieJSON -ITPhostname $ITPhostname -userId $ITPuserId -PortalOriginUrl "https://$ITPortalBaseUrl.itportal.com/v4/app/documents/$($doc.documentId)?ClientID=0"
+  $client = New-ITPHttpClientFromBrowserDump -CookieJson $CookieJSON -ITPhostname $ITPhostname -userId $ITPuserId -PortalOriginUrl "https://$ITPortalBaseUrl.itportal.com/v4/app/documents/$($doc.documentId)?ClientID=0"
     try {
         $docname = $doc.filename ?? "document_$($doc.documentId)"
         write-host " Fetching document: $($doc.documentId) as $docname" -ForegroundColor Cyan

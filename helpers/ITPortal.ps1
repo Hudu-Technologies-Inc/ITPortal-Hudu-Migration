@@ -121,3 +121,98 @@ function Get-ItPortalDocument {
     return $outFile
   }
 }
+
+function Get-HuduUrlForItPortalUpload {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$RelativeUrl,
+        [Parameter(Mandatory)][string]$BaseUrl,
+        [Parameter(Mandatory)][System.Net.Http.HttpClient]$Client,
+        [Parameter(Mandatory)][string]$TempDir,
+        [Parameter()][hashtable]$Cache,
+
+        [Parameter()][int]$UploadableId,
+        [Parameter()][ValidateSet('Article','Asset','Company', IgnoreCase=$true)]
+        [string]$UploadableType = 'Article'
+    )
+
+    if (-not $Cache) { $Cache = @{} }
+
+    $rel = $RelativeUrl.Trim()
+    if (-not $rel.StartsWith('/')) { $rel = "/$rel" }
+
+    $uploadId = [regex]::Match($rel, '(?i)(?:\?|&)UploadID=(\d+)').Groups[1].Value
+    if ([string]::IsNullOrWhiteSpace($uploadId)) { return $null }
+
+    # cache key should include uploadable target if that changes destination behavior
+    $cacheKey = if ($UploadableId) { "$uploadId|$UploadableType|$UploadableId" } else { "$uploadId" }
+    if ($Cache.ContainsKey($cacheKey)) { return $Cache[$cacheKey] }
+
+    $null = New-Item -ItemType Directory -Path $TempDir -Force -ErrorAction SilentlyContinue
+
+    $uri  = [Uri]::new(($BaseUrl.TrimEnd('/') + $rel))
+    $resp = $Client.GetAsync($uri).GetAwaiter().GetResult()
+    $resp.EnsureSuccessStatusCode() | Out-Null
+
+    $bytes = $resp.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+
+    $ct = $resp.Content.Headers.ContentType?.MediaType
+    $ext =
+        if    ($ct -eq 'image/jpeg') { '.jpg' }
+        elseif($ct -eq 'image/png')  { '.png' }
+        elseif($ct -eq 'image/gif')  { '.gif' }
+        elseif($ct -eq 'image/webp') { '.webp' }
+        else { '.bin' }
+
+    $filePath = Join-Path $TempDir ("itp-upload-$uploadId$ext")
+    [IO.File]::WriteAllBytes($filePath, $bytes)
+
+    # attach upload to article if requested
+    $uploadParams = @{ FilePath = $filePath }
+    if ($UploadableId) {
+        $uploadParams.UploadableType = $UploadableType
+        $uploadParams.UploadableId   = $UploadableId
+    }
+
+    $huduUpload = New-HuduUpload @uploadParams
+    $huduUpload = $huduUpload.upload ?? $huduUpload
+    $url = $huduUpload.url
+
+    $Cache[$cacheKey] = $url
+    return $url
+}
+
+function Rewrite-ItPortalDownloadNoteFileLinks {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Html,
+        [Parameter(Mandatory)][string]$BaseUrl,
+        [Parameter(Mandatory)][System.Net.Http.HttpClient]$Client,
+        [Parameter(Mandatory)][string]$TempDir,
+        [Parameter()][hashtable]$Cache,
+
+        [Parameter()][int]$UploadableId,
+        [Parameter()][ValidateSet('Article','Asset','Company', IgnoreCase=$true)]
+        [string]$UploadableType = 'Article'
+    )
+
+    if (-not $Cache) { $Cache = @{} }
+
+    $rx = [regex]'(?i)/portal3/ajax-updates/\?rID=DownloadNoteFile(?:[&]|&amp;)[^"\s>]+'
+
+    $rx.Replace($Html, {
+        param($m)
+        $relDecoded = $m.Value -replace '&amp;', '&'
+
+        $newUrl = Get-HuduUrlForItPortalUpload `
+            -RelativeUrl $relDecoded `
+            -BaseUrl $BaseUrl `
+            -Client $Client `
+            -TempDir $TempDir `
+            -Cache $Cache `
+            -UploadableId $UploadableId `
+            -UploadableType $UploadableType
+
+        if ([string]::IsNullOrWhiteSpace($newUrl)) { $m.Value } else { $newUrl }
+    })
+}

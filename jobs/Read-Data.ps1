@@ -22,3 +22,4 @@ foreach ($f in Get-ChildItem -Path $exportLocation -Recurse -File -Filter "*.csv
     }
 }
 $huducompanies = get-huducompanies
+$internalCompany = $huducompanies | Where-Object { $_.name -ieq $internalCompanyName } | Select-Object -First 1
