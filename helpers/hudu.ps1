@@ -248,3 +248,30 @@ function Get-HuduAssetFromName {
 }
 
 
+
+
+function DeDupe-Uploads {
+
+  $(get-huduuploads) |
+    Group-Object {
+        $uid = $_.uploadable_id
+        $nm  = (([string]$_.name).Trim() -replace '\s+',' ').ToLower()
+        if ($uid) { "{0}|{1}" -f $uid,$nm } else { $nm }
+    } |
+    Where-Object Count -gt 1 |
+    ForEach-Object {
+    $_.Group |
+        Sort-Object `
+        @{Expression={ $d=$_.created_at ?? $_.created_date; try{[datetime]$d}catch{Get-Date '1900-01-01'} }; Descending=$true}, `
+        @{Expression='id'; Descending=$true} |
+        Select-Object -Skip 1
+    } |
+    Where-Object { $null -eq $_.archived_at } |
+    ForEach-Object {
+    if (Get-Command Remove-HuduUpload -ErrorAction SilentlyContinue) {
+        Remove-HuduUpload -Id $_.id -Confirm:$false
+    } else {
+        Invoke-HuduRequest -Method delete -Resource "/api/v1/uploads/$($_.id)"
+    }
+    }
+}

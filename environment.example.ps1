@@ -19,7 +19,7 @@ $ASPSession = @{
 }
 $ITPortalJWTTOKEN = "eyJh..."
 
-# when we generate the cookie json for the session, we'll give it a future expiry
+# when we generate the cookie json for session replication when downloading docs
 $expiryTimestamp = [math]::Round((([DateTimeOffset]::UtcNow.AddHours(6).UtcDateTime - [datetime]'1970-01-01').TotalSeconds), 6)
 $CookieJSON =  @(
   @{

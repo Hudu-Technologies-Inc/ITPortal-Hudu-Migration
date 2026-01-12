@@ -1857,3 +1857,170 @@ function Get-NormalizedWebURL {
     return ("https://$Url").TrimEnd('/','\')
 }
 
+function Get-FileMagicBytes {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+
+        [int]$Count = 16
+    )
+
+    $fs = [System.IO.File]::OpenRead($Path)
+    try {
+        $buffer = New-Object byte[] $Count
+        $fs.Read($buffer, 0, $Count) | Out-Null
+        return $buffer
+    }
+    finally {
+        $fs.Dispose()
+    }
+}
+function Test-IsPdf {
+    param($Bytes)
+
+    # %PDF-
+    return ($Bytes[0] -eq 0x25 -and
+            $Bytes[1] -eq 0x50 -and
+            $Bytes[2] -eq 0x44 -and
+            $Bytes[3] -eq 0x46 -and
+            $Bytes[4] -eq 0x2D)
+}
+function Test-IsDocx {
+    param([string]$Path, $Bytes)
+
+    # ZIP header
+    if (-not ($Bytes[0] -eq 0x50 -and $Bytes[1] -eq 0x4B)) {
+        return $false
+    }
+
+    try {
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($Path)
+        $found = $zip.Entries | Where-Object { $_.FullName -ieq 'word/document.xml' }
+        return [bool]$found
+    }
+    catch {
+        return $false
+    }
+    finally {
+        if ($zip) { $zip.Dispose() }
+    }
+}
+function Test-IsPlainText {
+    param([string]$Path)
+
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+
+    # Reject if NULL bytes found
+    if ($bytes -contains 0) { return $false }
+
+    try {
+        [System.Text.Encoding]::UTF8.GetString($bytes) | Out-Null
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function Test-IsRtf {
+    param(
+        [Parameter(Mandatory)][string]$Path
+    )
+
+    # RTF is ASCII-ish, so read a small prefix as bytes and compare
+    $bytes = Get-FileMagicBytes -Path $Path -Count 8
+    $prefix = [System.Text.Encoding]::ASCII.GetString($bytes)
+
+    return ($prefix -like '{\rtf*')
+}
+function Test-IsProbablyText {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [int]$SampleBytes = 65536
+    )
+
+    $fs = [System.IO.File]::OpenRead($Path)
+    try {
+        $len = [Math]::Min($SampleBytes, [int]$fs.Length)
+        $buf = New-Object byte[] $len
+        $fs.Read($buf, 0, $len) | Out-Null
+
+        # NUL bytes are a strong "binary" signal
+        if ($buf -contains 0) { return $false }
+
+        # Control chars heuristic: allow common whitespace; reject lots of weird controls
+        $bad = 0
+        foreach ($b in $buf) {
+            if ($b -lt 0x09) { $bad++; continue }            # below tab
+            if ($b -ge 0x0E -and $b -lt 0x20) { $bad++ }     # other C0 controls except \t \n \r
+        }
+
+        # if too many controls, it's likely binary (threshold is intentionally conservative)
+        return (($bad / [double]$len) -lt 0.01)
+    }
+    finally {
+        $fs.Dispose()
+    }
+}
+
+function Test-IsHtml {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [int]$MaxChars = 20000
+    )
+
+    # Read a text sample (do NOT assume the whole file is safe/needed)
+    $fs = [System.IO.File]::OpenRead($Path)
+    try {
+        $buf = New-Object byte[] 65536
+        $read = $fs.Read($buf, 0, $buf.Length)
+        $sampleBytes = if ($read -eq $buf.Length) { $buf } else { $buf[0..($read-1)] }
+
+        # Decode as UTF8 with replacement (safe), then trim to MaxChars
+        $s = [System.Text.Encoding]::UTF8.GetString($sampleBytes)
+        if ($s.Length -gt $MaxChars) { $s = $s.Substring(0, $MaxChars) }
+
+        $t = $s.TrimStart()
+
+        # Strong signals first
+        if ($t -match '^(?is)<!doctype\s+html\b') { return $true }
+        if ($t -match '^(?is)<html\b') { return $true }
+
+        # Common HTML tags near the beginning
+        if ($t -match '(?is)<(head|body|script|meta|title|div|span|p|a|table)\b') { return $true }
+
+        return $false
+    }
+    finally {
+        $fs.Dispose()
+    }
+}
+
+function Get-FileType {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $magic = Get-FileMagicBytes $Path
+
+    if (Test-IsPdf $magic) { return 'PDF' }
+    if (Test-IsDocx $Path $magic) { return 'DOCX' }
+
+    # Only attempt text-ish formats if it looks like text
+    if (Test-IsProbablyText $Path) {
+        if (Test-IsRtf $Path)  { return 'RTF' }
+        if (Test-IsHtml $Path) { return 'HTML' }
+        return 'TXT'
+    }
+
+    return 'UnknownBinary'
+}
+function Limit-StringLength {
+    param(
+        [Parameter(ValueFromPipeline)]
+        [string]$InputObject,
+        [int]$Max = 64
+    )
+    process {
+        if ($InputObject.Length -le $Max) { $InputObject }
+        else { $InputObject.Substring(0, $Max) }
+    }
+}

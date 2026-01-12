@@ -2,7 +2,8 @@ $project_workdir = $PSScriptRoot
 $jobs = @(
 "read-datas",
 "Assets-and-Layouts"
-"Fetch-Docs"
+# "Create-Articles"
+# "Fetch-Docs"
 
 )
 
