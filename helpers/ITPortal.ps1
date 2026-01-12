@@ -170,8 +170,8 @@ function Get-HuduUrlForItPortalUpload {
     # attach upload to article if requested
     $uploadParams = @{ FilePath = $filePath }
     if ($UploadableId) {
-        $uploadParams.UploadableType = $UploadableType
-        $uploadParams.UploadableId   = $UploadableId
+        $uploadParams.recordType = $UploadableType
+        $uploadParams.recordID   = $UploadableId
     }
 
     $huduUpload = New-HuduUpload @uploadParams

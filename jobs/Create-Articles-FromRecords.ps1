@@ -35,7 +35,8 @@ foreach ($doc in $itportaldata.KBs.CsvData) {
         $client = New-ITPHttpClientFromBrowserDump -CookieJson $CookieJSON -ITPhostname $ITPhostname -userId $ITPuserId -PortalOriginUrl "https://$ITPortalBaseUrl.itportal.com/v4/app/kb/$($doc.kbid)?ClientID=0"
         $contents = $article.content
         $contents = Rewrite-ItPortalDownloadNoteFileLinks -Html $contents -BaseUrl "https://$ITPhostname" -Client $client -TempDir 'c:\docs-tmp' -Cache $cache -UploadableId 150
-        $article set-huduarticle -id $article.id -content $contents
+        $article = set-huduarticle -id $article.id -content $contents
+        $article = $article.article ?? $article
         $ArticleMatches["KBID_$($doc.KBID)"] = $article
     }
 
@@ -47,7 +48,7 @@ foreach ($doc in $itportaldata.documents.CsvData | where-object {-not ([string]:
     $MatchedKB = $null; $company = $null; $article = $null;
     $company = $(Get-HuduCompanies -Name $doc.company); $company = $company.company ?? $company;
     if ($null -eq $company -or $company.id -lt 1) {$company= $internalCompany}
-    $name = $(Limit-StringLength $($doc.docname ?? "KB-$($doc.documentId): $($doc.description)"))
+    $name = $(Limit-StringLength $($doc.docname ?? "Doc-$($doc.documentId): $($doc.description)"))
 
     if ($null -ne $company){
         $matchedKB = get-huduarticles -CompanyId $company.id -name $name | Select-Object -First 1
@@ -67,7 +68,15 @@ foreach ($doc in $itportaldata.documents.CsvData | where-object {-not ([string]:
     }
     $article = $article.article ?? $article
     write-host " Created/Updated KB Article from CSV doc contents. $($article.name)" -ForegroundColor Green
-    if ($article) { $ArticleMatches["DOCCSV_$($doc.documentId)"] = $article }
+    if ($article) { 
+        $client = New-ITPHttpClientFromBrowserDump -CookieJson $CookieJSON -ITPhostname $ITPhostname -userId $ITPuserId -PortalOriginUrl "https://$ITPortalBaseUrl.itportal.com/v4/app/documents/$($doc.documentid)?ClientID=0"
+        $contents = $article.content
+        $contents = Rewrite-ItPortalDownloadNoteFileLinks -Html $contents -BaseUrl "https://$ITPhostname" -Client $client -TempDir 'c:\docs-tmp' -Cache $cache -UploadableId 150
+        $article = set-huduarticle -id $article.id -content $contents
+        $article = $article.article ?? $article
+        $ArticleMatches["DOCCSV_$($doc.documentId)"] = $article 
+    
+    }
 }
 
 
