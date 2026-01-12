@@ -39,8 +39,11 @@ $IgnoreFields = @(
     "ForeignType",
     "FileSubmitDate",
     "CollectorID",
-    "ContactID"
-
+    "ContactID",
+    "DeletedByID",
+    "DeletedByName",
+    "ForeignConfigObjectID",
+    "ForeignConfigObjectTypeID"
 )
 $PassTypes = @("Passwords-FieldPasswords","Passwords-Devices","Passwords-LocalPasswords","Passwords-Accounts")
 
@@ -57,6 +60,7 @@ $LayoutSpecificIgnoreFields = @{
 # naming for specific object types
 $NameFields = @{
     "Contacts"="FullName"
+    "ConfigItems"="ciName"
 }
 
 
@@ -100,7 +104,7 @@ $orderedKeys = $ITPortalData.Keys | Sort-Object {switch ($_) {
                                             }}, { $_ }
 
 
-foreach ($key in $orderedKeys | where-object {$_ -notin $SkipTables -and $_ -notin $PassTypes}) {
+foreach ($key in @("ConfigItems")) {
 
     $csvRows = @($ITPortalData[$key].CsvData)
     if ($specialObjectTypes.keys -contains $key.ToLowerInvariant()){
