@@ -23,6 +23,7 @@ foreach ($doc in $itportaldata.KBs.CsvData) {
         $ArticleRequest.CompanyId = $company.id
     }
     if ($matchedKB){
+        write-host " Found existing article matching doc from CSV: $($matchedKB.name)" -ForegroundColor Yellow
         $ArticleRequest.Id = $matchedKB.id
         $article = Set-HuduArticle @ArticleRequest
     } else {
@@ -33,8 +34,8 @@ foreach ($doc in $itportaldata.KBs.CsvData) {
     if ($null -ne $article) {
         $ArticleMatches["KBID_$($doc.KBID)"] = $article
         $client = New-ITPHttpClientFromBrowserDump -CookieJson $CookieJSON -ITPhostname $ITPhostname -userId $ITPuserId -PortalOriginUrl "https://$ITPortalBaseUrl.itportal.com/v4/app/kb/$($doc.kbid)?ClientID=0"
-        $contents = $article.content
-        $contents = Rewrite-ItPortalDownloadNoteFileLinks -Html $contents -BaseUrl "https://$ITPhostname" -Client $client -TempDir 'c:\docs-tmp' -Cache $cache -UploadableId 150
+        $contents = $ArticleRequest.Content
+        $contents = Rewrite-ItPortalDownloadNoteFileLinks -Html $contents -BaseUrl "https://$ITPhostname" -Client $client -TempDir 'c:\docs-tmp' -Cache $cache -UploadableId $article.id
         $article = set-huduarticle -id $article.id -content $contents
         $article = $article.article ?? $article
         $ArticleMatches["KBID_$($doc.KBID)"] = $article
@@ -61,6 +62,7 @@ foreach ($doc in $itportaldata.documents.CsvData | where-object {-not ([string]:
         $ArticleRequest.CompanyId = $company.id
     }
     if ($matchedKB){
+        write-host " Found existing article matching doc from CSV: $($matchedKB.name)" -ForegroundColor Yellow
         $ArticleRequest.Id = $matchedKB.id
         $article = Set-HuduArticle @ArticleRequest
     } else {
@@ -70,8 +72,8 @@ foreach ($doc in $itportaldata.documents.CsvData | where-object {-not ([string]:
     write-host " Created/Updated KB Article from CSV doc contents. $($article.name)" -ForegroundColor Green
     if ($article) { 
         $client = New-ITPHttpClientFromBrowserDump -CookieJson $CookieJSON -ITPhostname $ITPhostname -userId $ITPuserId -PortalOriginUrl "https://$ITPortalBaseUrl.itportal.com/v4/app/documents/$($doc.documentid)?ClientID=0"
-        $contents = $article.content
-        $contents = Rewrite-ItPortalDownloadNoteFileLinks -Html $contents -BaseUrl "https://$ITPhostname" -Client $client -TempDir 'c:\docs-tmp' -Cache $cache -UploadableId 150
+        $contents = $ArticleRequest.Content
+        $contents = Rewrite-ItPortalDownloadNoteFileLinks -Html $contents -BaseUrl "https://$ITPhostname" -Client $client -TempDir 'c:\docs-tmp' -Cache $cache -UploadableId $article.id
         $article = set-huduarticle -id $article.id -content $contents
         $article = $article.article ?? $article
         $ArticleMatches["DOCCSV_$($doc.documentId)"] = $article 

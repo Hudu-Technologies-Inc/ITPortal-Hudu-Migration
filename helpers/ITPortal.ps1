@@ -155,14 +155,19 @@ function Get-HuduUrlForItPortalUpload {
     $resp.EnsureSuccessStatusCode() | Out-Null
 
     $bytes = $resp.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
-
     $ct = $resp.Content.Headers.ContentType?.MediaType
     $ext =
         if    ($ct -eq 'image/jpeg') { '.jpg' }
         elseif($ct -eq 'image/png')  { '.png' }
         elseif($ct -eq 'image/gif')  { '.gif' }
         elseif($ct -eq 'image/webp') { '.webp' }
-        else { '.bin' }
+        elseif($ct -eq 'application/pdf') { '.pdf' }
+        else { $null }
+
+    # If server lies or omits Content-Type, sniff bytes
+    if (-not $ext) {
+        $ext = Get-FileExtensionFromBytes $bytes
+    }
 
     $filePath = Join-Path $TempDir ("itp-upload-$uploadId$ext")
     [IO.File]::WriteAllBytes($filePath, $bytes)
@@ -215,4 +220,33 @@ function Rewrite-ItPortalDownloadNoteFileLinks {
 
         if ([string]::IsNullOrWhiteSpace($newUrl)) { $m.Value } else { $newUrl }
     })
+}
+function Get-FileExtensionFromBytes {
+    param([byte[]]$Bytes)
+
+    if ($Bytes.Length -lt 12) { return $null }
+
+    # PNG: 89 50 4E 47 0D 0A 1A 0A
+    if ($Bytes[0..7] -join ',' -eq '137,80,78,71,13,10,26,10') { return '.png' }
+
+    # JPG: FF D8 FF
+    if ($Bytes[0] -eq 0xFF -and $Bytes[1] -eq 0xD8 -and $Bytes[2] -eq 0xFF) { return '.jpg' }
+
+    # GIF: "GIF87a" or "GIF89a"
+    if (($Bytes[0..2] -as [char[]]) -join '' -eq 'GIF') { return '.gif' }
+
+    # WEBP: RIFF....WEBP
+    if (($Bytes[0..3] -as [char[]]) -join '' -eq 'RIFF' -and
+        ($Bytes[8..11] -as [char[]]) -join '' -eq 'WEBP') { return '.webp' }
+
+    # BMP: "BM"
+    if ($Bytes[0] -eq 0x42 -and $Bytes[1] -eq 0x4D) { return '.bmp' }
+
+    # TIFF: II* or MM*
+    if (($Bytes[0..3] -join ',') -in @('73,73,42,0','77,77,0,42')) { return '.tiff' }
+
+    # PDF (sometimes appears in KBs)
+    if (($Bytes[0..3] -as [char[]]) -join '' -eq '%PDF') { return '.pdf' }
+
+    return $null
 }
