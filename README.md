@@ -49,7 +49,7 @@ First, you'll need to make sure you have this browser extension. you can remove 
 http://chromewebstore.google.com/detail/cookiemanager-cookie-edit/hdhngoamekjhmnpenphenpaiindoinpo?hl=en
 Then, log into itportal and move to documents page
 
-<img width="1596" height="1076" alt="image" src="https://github.com/user-attachments/assets/fc1372e4-452d-4c66-a2e2-9fe90ace9ed9" />
+<img width="1596" height="1076" alt="image" src="https://github.com/user-attachments/assets/3151e3aa-adec-4df8-b115-54a4094a0f2d" />
 
 Next, you'll click the <span style="color:#f1c40f; font-weight:bold;">🟨 Cookie Manager icon (#1 in figure)</span>  
 Then click <span style="color:#2ecc71; font-weight:bold;">🟩 Select All (#2 in figure)</span>  
