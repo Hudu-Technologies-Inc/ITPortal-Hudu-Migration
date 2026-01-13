@@ -95,7 +95,7 @@ $NameFields = @{
 # $agreeMentsObjects = $allhuduassets | where-object {$_.asset_layout_id -eq $agreeMentsLayout.id}
 # $allHuduCompanies = Get-HuduCompanies
 
-# if (get-command -name Set-HapiErrorsDirectory -ErrorAction SilentlyContinue){try {Set-HapiErrorsDirectory -skipRetry $false} catch {}}
+if (get-command -name Set-HapiErrorsDirectory -ErrorAction SilentlyContinue){try {Set-HapiErrorsDirectory -skipRetry $true} catch {}}
 
 function Normalize-Key([string]$s) {
   if ([string]::IsNullOrWhiteSpace($s)) { return $null }
@@ -232,28 +232,21 @@ foreach ($key in $orderedKeys | where-object {$_ -in @("Devices","Sites","KBs","
             }
         write-host " Adding relations from $fromableType $($sourceObject.name) in company $($company.name): Assets to add: $($relationsToAdd["Asset"].Count), Articles to add: $($relationsToAdd["Article"].Count)" -ForegroundColor Cyan
         foreach ($relationNeeded in $relationsToAdd["Asset"]){
-            try {
                 $r = $null
                 $r = new-hudurelation -ToableType "Asset" -fromableType $fromableType -toableId $relationNeeded.id -FromableID $sourceObject.id
                 if ($null -ne $r){
                     $relationsCreated["$($fromableType)_$($sourceObject.id)_to_Asset_$($relationNeeded.id)"] = $r
                 }
-            } catch {
-                write-host "  Failed to create relation to asset $($relationNeeded.name): $($_.Exception.Message)" -ForegroundColor Red
-            }
         }
         foreach ($relationNeeded in $relationsToAdd["Article"]){
-            try {
                 $r = $null
                 $r = new-hudurelation -ToableType "Article" -fromableType $fromableType -toableId $relationNeeded.id -FromableID $sourceObject.id
                 if ($null -ne $r){
                     $relationsCreated["$($fromableType)_$($sourceObject.id)_to_Article_$($relationNeeded.id)"] = $r
                 }
-
-            } catch {
-                write-host "  Failed to create relation to article $($relationNeeded.name): $($_.Exception.Message)" -ForegroundColor Red
-            }
-        }
+       }
 
     }
 }
+
+if (get-command -name Set-HapiErrorsDirectory -ErrorAction SilentlyContinue){try {Set-HapiErrorsDirectory -skipRetry $false} catch {}}
