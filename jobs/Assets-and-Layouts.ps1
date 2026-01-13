@@ -6,13 +6,12 @@ $locationLayout = $locationLayout ?? $null
 $specialObjectTypes = @{
     "kbs"                           = "articles"
     "documents"                     = "articles"
-    # "passwords-devices"             = "assetpasswords"
-    # "passwords-fieldpasswords"      = "assetpasswords"
-    # "passwords-localPasswords"      = "assetpasswords"
-    # "passwords-accounts"            = "assetpasswpords"
     "companies"                     = "companies"
-    # "ipnetworks"                    = "ipam"
+    "ipnetworks"                    = "ipam"
 }
+
+$CreatedObjects = $CreatedObjects ?? @{}
+
 
 # junk props to ignore globally
 $IgnoreFields = @(
@@ -48,7 +47,6 @@ $IgnoreFields = @(
 $PassTypes = @("Passwords-FieldPasswords","Passwords-Devices","Passwords-LocalPasswords","Passwords-Accounts")
 
 $SkipTables= @(
-    "Contacts"
 )
 
 # junk props to ignore for specific layouts
@@ -111,6 +109,8 @@ foreach ($key in $orderedKeys | where-object {$_ -notin $SkipTables -and $_ -not
         $SpecialObjectType = $specialObjectTypes["$($key.ToLowerInvariant())"] ?? $null
         if ($null -eq $SpecialObjectType){write-host "No target for special object type $key"; continue;}
         write-host "Processing objects in $key as $SpecialObjectType"
+        if (-not $CreatedObjects.containsKey($key)){$CreatedObjects["$key"] = @()}
+
         if ($SpecialObjectType -eq "companies"){
             write-host "updating details for $($ITPortalData.Companies.CsvData.Company_name.count) companies"
             foreach ($row in $csvRows) {
@@ -423,6 +423,7 @@ foreach ($key in $orderedKeys | where-object {$_ -notin $SkipTables -and $_ -not
             } else {
                 $newAsset = New-HuduAsset @assetRequest; $newAsset = $newAsset.asset ?? $newAsset;
             }
+            $CreatedObjects["$key"] += $newAsset
         } catch {
             write-error $_
         }
