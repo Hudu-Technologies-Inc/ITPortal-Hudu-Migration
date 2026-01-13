@@ -23,3 +23,4 @@ foreach ($f in Get-ChildItem -Path $exportLocation -Recurse -File -Filter "*.csv
 }
 $huducompanies = get-huducompanies
 $company = Get-OrSetInternalCompany
+. "$project_workdir\fields-config.ps1"
