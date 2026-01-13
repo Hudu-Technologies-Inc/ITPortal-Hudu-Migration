@@ -119,6 +119,7 @@ foreach ($r in $itportaldata.ConfigItems.csvdata){ $csvBy.ConfigItems["$($r.Conf
 foreach ($r in $itportaldata.Agreements.csvdata) { $csvBy.Agreements["$($r.AgreementID)"] = $r }
 foreach ($r in $itportaldata.KBs.csvdata)        { $csvBy.KBs["$($r.KBID)"] = $r }
 foreach ($r in $itportaldata.Documents.csvdata)  { $csvBy.Documents["$($r.DocumentID)"] = $r }
+$internalCompany = Get-OrSetInternalCompany -internalCompanyName $internalCompanyName
 
 $relationsCreated = @{}
 foreach ($key in $orderedKeys | where-object {$_ -in @("Devices","Sites","KBs","Documents","ConfigItems","Contacts","Agreements")}) {
@@ -250,3 +251,4 @@ foreach ($key in $orderedKeys | where-object {$_ -in @("Devices","Sites","KBs","
 }
 
 if (get-command -name Set-HapiErrorsDirectory -ErrorAction SilentlyContinue){try {Set-HapiErrorsDirectory -skipRetry $false} catch {}}
+$ArticleMatches | convertto-json -depth 99 | set-content -path $(join-path $debugDir -childpath "relationsCreated.json") -force

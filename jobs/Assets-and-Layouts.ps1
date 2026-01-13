@@ -10,7 +10,7 @@ $specialObjectTypes = @{
     "ipnetworks"                    = "ipam"
 }
 
-$CreatedObjects = $CreatedObjects ?? @{}
+$CreatedAssets = $CreatedAssets ?? @{}
 
 
 # junk props to ignore globally
@@ -119,7 +119,7 @@ foreach ($key in $orderedKeys | where-object {$_ -notin $SkipTables -and $_ -not
         $SpecialObjectType = $specialObjectTypes["$($key.ToLowerInvariant())"] ?? $null
         if ($null -eq $SpecialObjectType){write-host "No target for special object type $key"; continue;}
         write-host "Processing objects in $key as $SpecialObjectType"
-        if (-not $CreatedObjects.containsKey($key)){$CreatedObjects["$key"] = @()}
+        if (-not $CreatedAssets.containsKey($key)){$CreatedAssets["$key"] = @()}
 
         if ($SpecialObjectType -eq "companies"){
             write-host "updating details for $($ITPortalData.Companies.CsvData.Company_name.count) companies"
@@ -433,10 +433,12 @@ foreach ($key in $orderedKeys | where-object {$_ -notin $SkipTables -and $_ -not
             } else {
                 $newAsset = New-HuduAsset @assetRequest; $newAsset = $newAsset.asset ?? $newAsset;
             }
-            $CreatedObjects["$key"] += $newAsset
+            $CreatedAssets["$key"] += $newAsset
         } catch {
             write-error $_
         }
     }
 
 }
+
+$CreatedAssets | convertto-json -depth 99 | set-content -path $(join-path $debugDir -childpath "CreatedAssets.json") -force

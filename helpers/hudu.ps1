@@ -1,44 +1,14 @@
-function Clear-DupeDocuments {
-    param ([array]$HuduArticles, [array]$huduUploads)
-
-    $HuduArticles |
-        Group-Object { '{0}|{1}' -f ($_.company_id ?? -1), (([string]$_.name).Trim() -replace '\s+',' ').ToLower() } |
-        Where-Object Count -gt 1 |
-        ForEach-Object {
-        $_.Group |
-            Sort-Object `
-            @{Expression={ $d=$_.updated_at ?? $_.created_at; try{[datetime]$d}catch{Get-Date '1900-01-01'} }; Descending=$true}, `
-            @{Expression='id'; Descending=$true} |
-            Select-Object -Skip 1
-        } |
-        Where-Object { $_.archived -ne $true } |
-        ForEach-Object { Remove-HuduArticle -Id $_.id -Confirm:$false }
-
-        
-    $huduUploads |
-        Group-Object {
-            $cid = $_.company_id
-            $nm  = (([string]$_.name).Trim() -replace '\s+',' ').ToLower()
-            if ($cid) { "{0}|{1}" -f $cid,$nm } else { $nm }
-        } |
-        Where-Object Count -gt 1 |
-        ForEach-Object {
-        $_.Group |
-            Sort-Object `
-            @{Expression={ $d=$_.created_at ?? $_.created_date; try{[datetime]$d}catch{Get-Date '1900-01-01'} }; Descending=$true}, `
-            @{Expression='id'; Descending=$true} |
-            Select-Object -Skip 1
-        } |
-        Where-Object { $null -eq $_.archived_at } |
-        ForEach-Object {
-        if (Get-Command Remove-HuduUpload -ErrorAction SilentlyContinue) {
-            Remove-HuduUpload -Id $_.id -Confirm:$false
-        } else {
-            Invoke-HuduRequest -Method delete -Resource "/api/v1/uploads/$($_.id)"
-        }
-        }
-
-
+function Get-OrSetInternalCompany {
+    param ([string]$internalCompanyName)
+    $internalCompany = $null
+    $internalCompany = get-huducompanies -name $internalCompanyName | select-object -first 1
+    $internalCompany = $internalCompany.company ?? $internalCompany
+    if ($null -eq $internalCompany -or $internalCompany.id -lt 1){
+        New-HuduCompany -name "$internalCompanyName"
+        $internalCompany = get-huducompanies -name $internalCompanyName | select-object -first 1
+        $internalCompany = $internalCompany.company ?? $internalCompany
+    }
+    return $internalCompany
 }
 
 function New-HuduAddress {

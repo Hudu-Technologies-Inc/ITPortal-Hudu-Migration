@@ -1,20 +1,10 @@
 $DocConversionTempDir = $tmpDir ?? "c:\docs-tmp"
+
+
 $ArticleMatches = $articleMatches ?? @{}
-$internalCompany = $internalCompany ?? ($huducompanies | Where-Object { $_.name -ieq $internalCompanyName } | Select-Object -First 1)
-$internalCompany = $internalCompany.company ?? $internalCompany
 
-Read-host "This step requires a fresh set of cookies! Be sure to use 'cookie-editor' and export all cookies, writing or overwriting the file located at $project_workdir\cookiejar.json"
-$successReadCookies = $false
-while ($false -eq $successReadCookies){
-    try {
-        $CookieJson = $(get-content -Raw -Path ".\cookiejar.json" | ConvertFrom-Json -depth -99)
-        $successReadCookies = $true
-        break
-    } catch {
-        Write-Error "Failed to read cookiejar.json file. Please ensure it exists and is valid JSON. Details: $_"
-    }
-}
-
+$internalCompany = Get-OrSetInternalCompany -internalCompanyName $internalCompanyName
+$cookieJson = Get-ProperCookieJson -project_workdir $project_workdir -neededFor "Fetching/Downloading Images from ITPortal Documents included in csv export"
 
 # step 2 - from knowledge base entries in CDSV, create hudu articles
 foreach ($doc in $itportaldata.KBs.CsvData) {
@@ -95,3 +85,4 @@ foreach ($doc in $itportaldata.documents.CsvData | where-object {-not ([string]:
 }
 
 
+$ArticleMatches | convertto-json -depth 99 | set-content -path $(join-path $debugDir -childpath "Articles-FromRecords.json") -force

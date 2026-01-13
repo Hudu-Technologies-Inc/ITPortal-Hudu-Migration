@@ -1,7 +1,5 @@
 $MatchedPasswords = @{}
-$internalCompany = $internalCompany ?? ($huducompanies | Where-Object { $_.name -ieq $internalCompanyName } | Select-Object -First 1)
-$internalCompany = $internalCompany.company ?? $internalCompany
-
+$internalCompany = Get-OrSetInternalCompany -internalCompanyName $internalCompanyName
 $PassTypes = @("Passwords-FieldPasswords","Passwords-Devices","Passwords-LocalPasswords","Passwords-Accounts")
 
 foreach ($passType in $PassTypes) {
@@ -73,3 +71,6 @@ foreach ($passType in $PassTypes) {
 
     }
 }
+
+
+$MatchedPasswords | convertto-json -depth 99 | set-content -path $(join-path $debugDir -childpath "PasswordsCreated.json") -force

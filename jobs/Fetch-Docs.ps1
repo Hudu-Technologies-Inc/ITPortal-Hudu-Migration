@@ -1,15 +1,6 @@
-Read-host "This step requires a fresh set of cookies! Be sure to use 'cookie-editor' and export all cookies, writing or overwriting the file located at $project_workdir\cookiejar.json"
-$successReadCookies = $false
-while ($false -eq $successReadCookies){
-    try {
-        $CookieJson = $(get-content -Raw -Path ".\cookiejar.json" | ConvertFrom-Json -depth -99)
-        $successReadCookies = $true
-        break
-    } catch {
-        Write-Error "Failed to read cookiejar.json file. Please ensure it exists and is valid JSON. Details: $_"
-    }
-}
 
+$cookieJson = Get-ProperCookieJson -project_workdir $project_workdir -neededFor "Fetching/Downloading Documents from ITPortal that are not included in csv export"
+$docsFetched = @{}
 
 foreach ($doc in $itportaldata.Documents.CsvData){
   # new client for XSSRF protection
@@ -26,10 +17,11 @@ foreach ($doc in $itportaldata.Documents.CsvData){
             Rename-Item -Path $docname -NewName $newFileName -Force
             write-host " Renamed document $($doc.documentId) to $newFileName based on detected file type $fileType" -ForegroundColor Green
         }
-
+        $docsFetched["$($doc.DocumentId)"]="$docname"
     } catch {
         Write-Error "Failed to get document: $_"
     }
     start-sleep 3
 }
 
+$docsFetched | convertto-json -depth 99 | set-content -path $(join-path $debugDir -childpath "Articles-Fetched.json") -force
