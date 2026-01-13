@@ -75,6 +75,7 @@
 $NameFields = @{
     "Contacts"="FullName"
     "ConfigItems"="ciName"
+
 }
 
 $allHuduAssets = Get-HuduAssets
@@ -92,6 +93,7 @@ $devicesObjects = $allhuduassets | where-object {$_.asset_layout_id -eq $devices
 $configurationsObjects = $allhuduassets | where-object {$_.asset_layout_id -eq $configurationsLayout.id}
 $sitesObjects = $allhuduassets | where-object {$_.asset_layout_id -eq $sitesLayout.id}
 $agreeMentsObjects = $allhuduassets | where-object {$_.asset_layout_id -eq $agreeMentsLayout.id}
+$allHuduCompanies = Get-HuduCompanies
 
 if (get-command -name Set-HapiErrorsDirectory -ErrorAction SilentlyContinue){try {Set-HapiErrorsDirectory -skipRetry $false} catch {}}
 
@@ -110,13 +112,13 @@ foreach ($key in $orderedKeys | where-object {$_ -in @("Devices","Sites","KBs","
             $relationsToAdd = @{
                 Asset=@(); Article=@();
             }
-            $company = $null; $company = get-huducompanies -name $row.company | Select-Object -First 1; $company = $company.company ?? $company;
+            $company = $null; $company = $allHuduCompanies | where-object {$_.name -ieq $row.company} | Select-Object -First 1; $company = $company.company ?? $company;
             $company = $company ?? $internalCompany
             $sourceObject = $null
             if ($key -eq "Devices"){
                 $sourceObject = $devicesObjects | where-object { $_.name -eq $row.Name -and $_.company_id -eq $company.id} | select-object -first 1
             } elseif ($key -eq "Sites"){
-                $sourceObject = $sitesObjects | where-object { $_.name -eq $row.SiteName -and $_.company_id -eq $company.id} | select-object -first 1
+                $sourceObject = $sitesObjects | where-object { $_.name -eq $row.Name -and $_.company_id -eq $company.id} | select-object -first 1
             } elseif ($key -eq "KBs"){
                 $sourceObject = $allHuduArticles | where-object { $_.name -eq $row.kbname -and $_.company_id -eq $company.id} | select-object -first 1
             } elseif ($key -eq "Documents"){
@@ -126,10 +128,10 @@ foreach ($key in $orderedKeys | where-object {$_ -in @("Devices","Sites","KBs","
             } elseif ($key -eq "Contacts"){
                 $sourceObject = $contactsObjects | where-object { $_.name -eq $row.FullName -and $_.company_id -eq $company.id} | select-object -first 1
             } elseif ($key -eq "Agreements"){
-                $sourceObject = $agreeMentsObjects | where-object { $_.name -eq $row.AgreementName -and $_.company_id -eq $company.id} | select-object -first 1
+                $sourceObject = $agreeMentsObjects | where-object { $_.name -eq $row.Name -and $_.company_id -eq $company.id} | select-object -first 1
             }
             if ($null -eq $sourceObject){
-                write-host " Could not find source object for $key with name $($NameFields[$key]) = $($row.$($NameFields[$key])) in company $($company.name). skipping relations." -ForegroundColor Yellow
+                write-host " Could not find source object for $key with name $($key) = $($row.Name ?? $row.$($NameFields[$key])) in company $($company.name). skipping relations." -ForegroundColor Yellow
                 continue
             }
             if ($key -in @("KBs","Documents")){
