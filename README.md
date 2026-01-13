@@ -44,15 +44,19 @@ And then you can kick it off by opening pwsh7 session as administrator, and dot-
 ## Refreshing Cookie Jar
 
 This part is easier than it seems
-First, you'll need to make sure you have this browser extension
+First, you'll need to make sure you have this browser extension. you can remove it afterwards, of course
 
 http://chromewebstore.google.com/detail/cookiemanager-cookie-edit/hdhngoamekjhmnpenphenpaiindoinpo?hl=en
-
 Then, log into itportal and move to documents page
-Next, you'll click your cookie manager / editor icon and 'select-all'
-then, hit 'export'.
+
+<img width="1596" height="1076" alt="image" src="https://github.com/user-attachments/assets/fc1372e4-452d-4c66-a2e2-9fe90ace9ed9" />
+
+Next, you'll click the <span style="color:#f1c40f; font-weight:bold;">🟨 Cookie Manager icon (#1 in figure)</span>  
+Then click <span style="color:#2ecc71; font-weight:bold;">🟩 Select All (#2 in figure)</span>  
+Then click <span style="color:#9b59b6; font-weight:bold;">🟪 Export (#3 in figure)</span>
 
 when prompted for a save location, you'll save or overwrite the file located in this project folder, named 'cookiejar.json'
+If your browser doesnt ask you where to save this file, it will be in your downloads folder. You can hit CTL+J to get to recent downloads quickly. From there, you'll just need to copy the item to project folder and rename it to 'cookiejar.json', right next to your environment file.
 
 it's reccomended to do refresh your cookie jar by repeating the above process when prompted for a second time (as not to miss any images in documents)
 
