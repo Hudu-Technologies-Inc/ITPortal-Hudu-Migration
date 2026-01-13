@@ -14,6 +14,57 @@ $specialObjectTypes = @{
     # "ipnetworks"                    = "ipam"
 }
 
+# junk props to ignore globally
+$IgnoreFields = @(
+    "mod_date",
+    "IgnoreGlobalBlock",
+    "Changes",
+    "ChangeCount",
+    "ChangesCount",
+    "IgnoreGlobalAllow",
+    "IgnoreGlobalBlock".
+    "ForeignConfigObjectID",
+    "ForeignConfigObjectTypeID",
+    "is_file_indexed",
+    "is_object_indexed_open_ai",
+    "is_file_indexed_open_ai",
+    "ClientID",
+    "FileDeleted",
+    "LastATActivityDate",
+    "DeletedByID",
+    "DeletedByName",
+    "DeletedDate",
+    "ModifiedDate",
+    "objectGUID",
+    "ForeignType",
+    "FileSubmitDate",
+    "CollectorID",
+    "ContactID",
+    "DeletedByID",
+    "DeletedByName",
+    "ForeignConfigObjectID",
+    "ForeignConfigObjectTypeID"
+)
+$PassTypes = @("Passwords-FieldPasswords","Passwords-Devices","Passwords-LocalPasswords","Passwords-Accounts")
+
+$SkipTables= @(
+    "Contacts"
+)
+
+# junk props to ignore for specific layouts
+$LayoutSpecificIgnoreFields = @{
+    "Sites" =@("ClientID","SiteId")
+    "Devices"=@("Lock","LoclClients")
+}
+
+# naming for specific object types
+$NameFields = @{
+    "Contacts"="FullName"
+    "ConfigItems"="ciName"
+}
+
+
+
 $companyPropMap = @{
     nickname            = "Nickname"
     address_line_1      = "AddressLine1"
@@ -46,11 +97,14 @@ $discernment = 4096
 $orderedKeys = $ITPortalData.Keys | Sort-Object {switch ($_) {
                                                 'Sites'     { 0 }
                                                 'Companies' { 1 }
-                                                default     { 2 }
+                                                'Devices'   { 2 }
+                                                'Configurations'   { 3 }
+                                                'Contacts'   { 9 }
+                                                default     { 8 }
                                             }}, { $_ }
 
 
-foreach ($key in $orderedKeys) {
+foreach ($key in $orderedKeys | where-object {$_ -notin $SkipTables -and $_ -notin $PassTypes}) {
 
     $csvRows = @($ITPortalData[$key].CsvData)
     if ($specialObjectTypes.keys -contains $key.ToLowerInvariant()){
@@ -90,6 +144,9 @@ foreach ($key in $orderedKeys) {
             }
             continue
         } elseif ($key -ieq "documents" -or $key -ieq "kbs"){
+
+            # skip for now
+            continue
             write-host "processing $($ITPortalData.$key.CsvData.count) $key as articles"
             
             foreach ($row in $csvRows) {
@@ -101,7 +158,7 @@ foreach ($key in $orderedKeys) {
                 $title = $row.docname ?? $row.KBName ?? $row.description ?? $row.FileName  ?? "Unnamed Document $(Get-Random -minimum 111111 -maximum 999999)"
 
                 if ([string]::isnullorempty($content)) {
-                    $foundFile = Get-Childitem -path $documentExports -recurse -File -Filter $row.FileName | select-object -first 1
+                    $foundFile = Get-Childitem -path $ITPexports -recurse -File -Filter $row.FileName | select-object -first 1
                     if ($null -ne $foundFile){
                         write-host "using $($foundFile.fullname) for document contents in doc id $($row.DocumentId)"
                         $content = Get-Content -path $foundFile.fullname -raw
@@ -210,6 +267,10 @@ foreach ($key in $orderedKeys) {
                 continue
             }
         }
+        if ($IgnoreFields -contains $label){
+            Write-Host "`tField '$label' is in ignore list; skipping." -ForegroundColor Yellow
+            continue
+        }
         
 
         if (LabelIsSecret -Label $label) {
@@ -292,8 +353,13 @@ foreach ($key in $orderedKeys) {
     foreach ($row in $csvRows) {
         $huduCompaniesRef = [ref]$huduCompanies
         $company = Ensure-HuduCompany -Row $row -InternalCompanyName $internalcompanyName -CompanyMap $CompanyMap -HuduCompanies $huduCompaniesRef
-        $GivenName = $row.name ?? $row.PSObject.Properties[0].Value ?? "Unnamed $key Asset $($($([Guid]::NewGuid().ToString()) -split "-")[0])"
 
+        if ($NameFields.ContainsKey($key)){
+            $GivenName = $row.$($NameFields[$key]) ?? $row.PSObject.Properties[0].Value ?? "Unnamed $key Asset $($($([Guid]::NewGuid().ToString()) -split "-")[0])"
+        } else {
+        
+            $GivenName = $row.name ?? $row.PSObject.Properties[0].Value ?? "Unnamed $key $($($([Guid]::NewGuid().ToString()) -split "-")[0])"
+        }
         $assetRequest = @{
             AssetLayoutID = $al.id
             CompanyId     = $company.id
@@ -316,11 +382,21 @@ foreach ($key in $orderedKeys) {
         foreach ($label in $ITPortalData[$key].Properties) {
             $field = $ALFields | where-object { $_.label -ieq $label } | select-object -first 1
             if (-not $field) {continue}
-
+            if ($IgnoreFields -contains $label){
+                Write-Host "`tField '$label' is in ignore list; skipping." -ForegroundColor Yellow
+                continue
+            }
+            if ($LayoutSpecificIgnoreFields.ContainsKey($key)){
+                if ($LayoutSpecificIgnoreFields[$key] -contains $label){
+                    Write-Host "`tField '$label' is in layout-specific ignore list; skipping." -ForegroundColor Yellow
+                    continue
+                }
+            }
 
 
             $prop = $row.PSObject.Properties[$label]
             if (-not $prop) { continue }
+
             $val = $null
             $val = $prop.Value
             if ([string]::IsNullOrWhiteSpace([string]$val)) { continue }

@@ -247,4 +247,84 @@ function Get-HuduAssetFromName {
     return $matchedCompany
 }
 
+function Get-OtpAuthParams {
+    param([Parameter(Mandatory)][string]$Uri)
 
+    $qIndex = $Uri.IndexOf('?')
+    $result = [ordered]@{ secret = $null; issuer = $null }
+
+    if ($qIndex -lt 0 -or $qIndex -eq $Uri.Length-1) { return [pscustomobject]$result }
+    $qs = $Uri.Substring($qIndex + 1)
+
+    foreach ($pair in $qs.Split('&', [System.StringSplitOptions]::RemoveEmptyEntries)) {
+        $eq = $pair.IndexOf('=')
+        if ($eq -lt 0) { continue }
+
+        $k = $pair.Substring(0, $eq)
+        $v = [uri]::UnescapeDataString($pair.Substring($eq + 1))
+
+        if ($k -ieq 'secret') { $result.secret = $v }
+        elseif ($k -ieq 'issuer') { $result.issuer = $v }
+    }
+
+    [pscustomobject]$result
+}
+function ConvertTo-ValidatedOtpSecret {
+    [CmdletBinding()]
+    param(
+        [Parameter(ValueFromPipeline, Mandatory)]
+        [string]$InputObject,
+
+        [int]$MinLen = 16,
+        [int]$MaxLen = 80
+    )
+
+    process {
+        $raw = ($InputObject ?? '').Trim()
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            return [pscustomobject]@{
+                IsValid  = $false
+                Secret   = $null
+                Issuer   = $null
+                Reason   = 'Empty'
+                Raw      = $InputObject
+                Source   = 'none'
+            }
+        }
+
+        # If it's an otpauth URI, extract secret and issuer
+        $issuer = $null
+        $candidate = $raw
+        $source = 'raw'
+
+        if ($raw -like 'otpauth://*') {
+            $p = Get-OtpAuthParams -Uri $raw
+            $candidate = $p.secret
+            $issuer = $p.issuer
+            $source = 'otpauth'
+        }
+
+        $candidate = ($candidate ?? '').Trim().ToUpperInvariant()
+
+        $candidate = $candidate -replace '[\s-]', ''
+        $candidate = $candidate.TrimEnd('=')
+
+        $isValidBase32 = $candidate -match '^[A-Z2-7]+$'
+        $lengthOK      = $candidate.Length -ge $MinLen -and $candidate.Length -le $MaxLen
+
+        $isValid = $isValidBase32 -and $lengthOK
+
+        [pscustomobject]@{
+            IsValid  = $isValid
+            Secret   = if ($isValid) { $candidate } else { $null }
+            Issuer   = $issuer
+            Reason   = if ($isValid) { $null } else {
+                if (-not $isValidBase32 -and -not $lengthOK) { "NotBase32;BadLength($($candidate.Length))" }
+                elseif (-not $isValidBase32) { "NotBase32" }
+                else { "BadLength($($candidate.Length))" }
+            }
+            Raw      = $raw
+            Source   = $source
+        }
+    }
+}
