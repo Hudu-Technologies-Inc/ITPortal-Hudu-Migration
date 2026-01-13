@@ -41,6 +41,23 @@ And then you can kick it off by opening pwsh7 session as administrator, and dot-
 . .\my-environment.ps1
 ```
 
+## What Gets Moved Over?
+
+Accounts, ConfigItems, Agreements, Devices, Contacts, Sites get moved over during the 'Assets-And-Layouts' Job as Assets in Hudu. Companies are created during this job as well (as Companies in Hudu)
+When this job finishes, all created assets can be found in a folder in the project directory, named Debug. The assets dump file is named 'CreatedAssets.json'
+
+KBs And Documents get created as Articles in Hudu from your CSV export During 'Create-Articles-FromRecords' Job. This Job requires that you have a fresh 'CookieJar.Json' File in order to download images in these articles.
+When this job finishes, all Articles from CSV can be found in a folder in the project directory, named Debug. The assets dump file is named 'Articles-FromRecords.json'. These are organized by whether they started as a kb object or an embedded document object.
+
+Documents-As-Files are downloaded programmatically and converted/added to Hudu as Articles during the 'Create-Articles-FromFiles' Job. This job also is good to have a fresh 'CookieJar.Json' file for downloading the source document files.
+When this job finishes, all Articles from Files can be found in a folder in the project directory, named Debug. The assets dump file is named 'Articles-FromFiles.json'.
+
+Device-Passwords, Account-Passwords, LocalPasswords, and FieldPasswords are created during the 'Submit-Passwords' Job. During which, they are also related to any documents or assets as-needed.
+When this job finishes, all passwords from csv export can be found in a folder in the project directory, named Debug. The assets dump file is named 'PasswordsCreated.json'. They will be organized by the type of password they originally had been.
+
+Relationships are created during the 'Set-Relations' job based on ITportal identifiers and companies they belong to. 
+When this job finishes, all passwords from csv export can be found in a folder in the project directory, named Debug. The assets dump file is named 'relationsCreated.json'. They will be organized by the type of relationship they represent (to or from an asset or article)
+
 ## Refreshing Cookie Jar
 
 This part is easier than it seems
