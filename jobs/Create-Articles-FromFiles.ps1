@@ -4,7 +4,7 @@ $ArticleMatches = $articleMatches ?? @{}
 $internalCompany = $internalCompany ?? ($huducompanies | Where-Object { $_.name -ieq $internalCompanyName } | Select-Object -First 1)
 $internalCompany = $internalCompany.company ?? $internalCompany
 
-foreach ($doc in $(get-childitem -path "$ITPexports\Documents" -file -recurse)) {
+foreach ($doc in $(get-childitem -path "$ITPDownloads\Documents" -file -recurse)) {
     $uuid = [guid]::NewGuid().ToString()
     $record = $null; $company = $null;
     $dest = Join-Path $DocConversionTempDir ("doc-" + $uuid)

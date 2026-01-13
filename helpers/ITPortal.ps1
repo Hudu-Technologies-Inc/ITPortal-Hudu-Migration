@@ -1,7 +1,7 @@
 function Get-ItPortalDocumentWithCookie {
   [CmdletBinding()]
   param(
-    [Parameter(Mandatory)][string]$ITPortalBaseUrl,
+    [Parameter(Mandatory)][string]$ITPortalSubdomain,
     [Parameter(Mandatory)][string]$ITPortalCookie,
     [Parameter(Mandatory)][int]$DocumentId,
     [Parameter(Mandatory)][int]$ClientId,
@@ -9,7 +9,7 @@ function Get-ItPortalDocumentWithCookie {
     [Parameter()][string]$FileName = ("Document-$DocumentId.bin")
   )
 
-  $downloadUrl = "https://$ITPortalBaseUrl.itportal.com/portal3/ajax-updates/?rID=DownloadDoc&DocumentID=$DocumentId&ClientID=$ClientId"
+  $downloadUrl = "https://$ITPortalSubdomain.itportal.com/portal3/ajax-updates/?rID=DownloadDoc&DocumentID=$DocumentId&ClientID=$ClientId"
   Invoke-WebRequest -Uri $downloadUrl -Headers @{
     Cookie = $ITPortalCookie
     Accept = '*/*'

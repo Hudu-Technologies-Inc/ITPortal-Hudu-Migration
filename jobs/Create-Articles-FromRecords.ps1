@@ -3,6 +3,19 @@ $ArticleMatches = $articleMatches ?? @{}
 $internalCompany = $internalCompany ?? ($huducompanies | Where-Object { $_.name -ieq $internalCompanyName } | Select-Object -First 1)
 $internalCompany = $internalCompany.company ?? $internalCompany
 
+Read-host "This step requires a fresh set of cookies! Be sure to use 'cookie-editor' and export all cookies, writing or overwriting the file located at $project_workdir\cookiejar.json"
+$successReadCookies = $false
+while ($false -eq $successReadCookies){
+    try {
+        $CookieJson = $(get-content -Raw -Path ".\cookiejar.json" | ConvertFrom-Json -depth -99)
+        $successReadCookies = $true
+        break
+    } catch {
+        Write-Error "Failed to read cookiejar.json file. Please ensure it exists and is valid JSON. Details: $_"
+    }
+}
+
+
 # step 2 - from knowledge base entries in CDSV, create hudu articles
 foreach ($doc in $itportaldata.KBs.CsvData) {
     $MatchedKB = $null; $company = $null; $article = $null;
@@ -33,7 +46,7 @@ foreach ($doc in $itportaldata.KBs.CsvData) {
     write-host " Created/Updated KB Article from CSV kb contents. $($article.name)" -ForegroundColor Green
     if ($null -ne $article) {
         $ArticleMatches["KBID_$($doc.KBID)"] = $article
-        $client = New-ITPHttpClientFromBrowserDump -CookieJson $CookieJSON -ITPhostname $ITPhostname -userId $ITPuserId -PortalOriginUrl "https://$ITPortalBaseUrl.itportal.com/v4/app/kb/$($doc.kbid)?ClientID=0"
+        $client = New-ITPHttpClientFromBrowserDump -CookieJson $CookieJSON -ITPhostname $ITPhostname -userId $ITPuserId -PortalOriginUrl "https://$ITPortalSubdomain.itportal.com/v4/app/kb/$($doc.kbid)?ClientID=0"
         $contents = $ArticleRequest.Content
         $contents = Rewrite-ItPortalDownloadNoteFileLinks -Html $contents -BaseUrl "https://$ITPhostname" -Client $client -TempDir 'c:\docs-tmp' -Cache $cache -UploadableId $article.id
         $article = set-huduarticle -id $article.id -content $contents
@@ -71,7 +84,7 @@ foreach ($doc in $itportaldata.documents.CsvData | where-object {-not ([string]:
     $article = $article.article ?? $article
     write-host " Created/Updated KB Article from CSV doc contents. $($article.name)" -ForegroundColor Green
     if ($article) { 
-        $client = New-ITPHttpClientFromBrowserDump -CookieJson $CookieJSON -ITPhostname $ITPhostname -userId $ITPuserId -PortalOriginUrl "https://$ITPortalBaseUrl.itportal.com/v4/app/documents/$($doc.documentid)?ClientID=0"
+        $client = New-ITPHttpClientFromBrowserDump -CookieJson $CookieJSON -ITPhostname $ITPhostname -userId $ITPuserId -PortalOriginUrl "https://$ITPortalSubdomain.itportal.com/v4/app/documents/$($doc.documentid)?ClientID=0"
         $contents = $ArticleRequest.Content
         $contents = Rewrite-ItPortalDownloadNoteFileLinks -Html $contents -BaseUrl "https://$ITPhostname" -Client $client -TempDir 'c:\docs-tmp' -Cache $cache -UploadableId $article.id
         $article = set-huduarticle -id $article.id -content $contents
