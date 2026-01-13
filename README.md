@@ -45,32 +45,40 @@ And then you can kick it off by opening pwsh7 session as administrator, and dot-
 ```
 
 ## What Gets Moved Over?
-Accounts, ConfigItems, Agreements, Devices, Contacts, Sites, Companies, Kbs from CSV, Documents from CSV, Documents from ITportal-Downloads, Device-Passwords, Account-Passwords, LocalPasswords, and FieldPasswords, object relationships
+Accounts, ConfigItems, Agreements, Devices, Contacts, Sites, Companies, Kbs from CSV, Documents from CSV, Documents from ITportal-Downloads, Device-Passwords, Account-Passwords, LocalPasswords, and FieldPasswords, object relationships.
 
 ## What Doesnt get Moved Over?
 While all these objects get moved over, including the source images, the images set for companies will need to be re-applied from the images uploaded into hudu (for now)
 
 ## information on Jobs/Tasks
 
-Read-Data task gets initial information about your Hudu instance, whether or not your internal company exists yet, and what kinds of assets and companies you already have there.
+#### 1. **Read-Data** Task
+gets initial information about your Hudu instance, whether or not your internal company exists yet, and what kinds of assets and companies you already have there.
 
+#### 2. **Assets-And-Layouts** Task
 Accounts, ConfigItems, Agreements, Devices, Contacts, Sites get moved over during the 'Assets-And-Layouts' Job as Assets in Hudu. Companies are created during this job as well (as Companies in Hudu)
 When this job finishes, all created assets can be found in a folder in the project directory, named Debug. The assets dump file is named 'CreatedAssets.json'
 
+#### 3. **Fetch-Docs** Task
 Fetch-Docs job requires a fresh 'CookieJar.Json' file for downloading the source document files. You only need to refresh this file (see section below) a few times, but it is important to keep this file current when asked, especially for larger migrations.
 
-Documents-As-Files are downloaded programmatically and converted/added to Hudu as Articles during the 'Create-Articles-FromFiles' Job.
+#### 4. **Create-Articles-FromFiles** Task
+Documents are downloaded programmatically and converted/added to Hudu as Articles during the 'Create-Articles-FromFiles' Job.
 When this job finishes, all Articles from Files can be found in a folder in the project directory, named Debug. The assets dump file is named 'Articles-FromFiles.json'.
 
+#### 5. **Create-Articles-FromRecords** Task
 KBs And Documents get created as Articles in Hudu from your CSV export During 'Create-Articles-FromRecords' Job. This Job requires that you have a fresh 'CookieJar.Json' File in order to download images in these articles.
 When this job finishes, all Articles from CSV can be found in a folder in the project directory, named Debug. The assets dump file is named 'Articles-FromRecords.json'. These are organized by whether they started as a kb object or an embedded document object.
 
+#### 6. **Submit-Passwords** Task
 Device-Passwords, Account-Passwords, LocalPasswords, and FieldPasswords are created during the 'Submit-Passwords' Job. During which, they are also related to any documents or assets as-needed.
 When this job finishes, all passwords from csv export can be found in a folder in the project directory, named Debug. The assets dump file is named 'PasswordsCreated.json'. They will be organized by the type of password they originally had been.
 
+#### 7. **Set-Relations** Task
 Relationships are created during the 'Set-Relations' job based on ITportal identifiers and companies they belong to. 
 When this job finishes, all passwords from csv export can be found in a folder in the project directory, named Debug. The assets dump file is named 'relationsCreated.json'. They will be organized by the type of relationship they represent (to or from an asset or article)
 
+There is an optional wrap-up task as well, but that will become a thing of the past as these other tasks are improved upon.
 
 ## Cookie Jar
 Install the Cookie Manager extension and export cookies to `cookiejar.json` in this folder.
