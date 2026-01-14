@@ -1,7 +1,7 @@
 
 
 $companyMap = @{}; $assetsMap = @{};
-$huducompanies = $huducompanies ?? $(get-huducompanies)
+$huducompanies = $huducompanies ?? $(get-huducompanies) ?? @()
 $locationLayout = $locationLayout ?? $null
 $CreatedAssets = $CreatedAssets ?? @{}
 . "$project_workdir\fields-config.ps1"
