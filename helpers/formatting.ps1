@@ -22,7 +22,7 @@ function LabelIsRichtext {
     param ([string]$label)
     if ([string]::IsNullOrWhiteSpace($label)) { return $false }
 
-    $secretKeywords = @('notes','html','description','comment','remarks','comments','observations','bemerkungen','comentarios','changes')
+    $secretKeywords = @('notes','html','description','comment','remarks','comments','observations','bemerkungen','comentarios','changes','HardDiskInfo')
     foreach ($kw in $secretKeywords) {
         if ($label.ToLower().Contains($kw)) {
             return $true
