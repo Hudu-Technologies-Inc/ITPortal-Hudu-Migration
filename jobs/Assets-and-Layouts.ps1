@@ -24,9 +24,8 @@ foreach ($key in $orderedKeys | where-object {$_ -notin $SkipTables -and $_ -not
         $SpecialObjectType = $specialObjectTypes["$($key.ToLowerInvariant())"] ?? $null
         if ($null -eq $SpecialObjectType){write-host "No target for special object type $key"; continue;}
         write-host "Processing objects in $key as $SpecialObjectType"
-        if (-not $CreatedAssets.ContainsKey($key)) {
-            $CreatedAssets[$key] = [System.Collections.Generic.List[object]]::new()
-        }
+        if (-not $CreatedAssets.containsKey($key)){$CreatedAssets["$key"] = @()}
+
         if ($SpecialObjectType -eq "companies"){
             write-host "updating details for $($ITPortalData.Companies.CsvData.Company_name.count) companies"
             foreach ($row in $csvRows) {
@@ -339,7 +338,7 @@ foreach ($key in $orderedKeys | where-object {$_ -notin $SkipTables -and $_ -not
             } else {
                 $newAsset = New-HuduAsset @assetRequest; $newAsset = $newAsset.asset ?? $newAsset;
             }
-            $CreatedAssets[$key].Add($newAsset)
+            $CreatedAssets[$key] = @($CreatedAssets[$key]) + @($newAsset)
         } catch {
             write-error $_
         }
