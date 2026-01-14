@@ -1,9 +1,3 @@
-# junk props to use for names in certain tables
-$NameFields = @{
-    "Contacts"="FullName"
-    "ConfigItems"="ciName"
-}
-
 # non-asset object types to skip in assets-and-layouts
 $specialObjectTypes = @{
     "kbs"                           = "articles"

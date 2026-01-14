@@ -92,3 +92,13 @@ If your browser doesnt ask you where to save this file, it will be in your downl
 
 it's reccomended to do refresh your cookie jar by repeating the above process when prompted for a second time (as not to miss any images in documents)
 
+## Advanced Use
+
+If you require more granular control over the asset layouts and fields in Hudu, you can optionally edit the file, named 'fields-config.ps1'
+
+This file contains some key variables that are referenced when applying changes to assets.
+More specifically, if there is a certain property or column that you wish to be used for naming a specific object type, you can change $NameFields. This hashtable is refrenced in the format: ObjectType = NameField.
+
+If there are fields you wish to ignore across the board, you can add them to $IgnoreFields array. It already has some sane defaults, fields that are used internally by ITPortal, but you can add any other fields you dont want to be added or read-in to Hudu.
+
+If you want to map certain properties to certain fields for companies in Hudu, you can modify the $companyPropMap hashtable.
