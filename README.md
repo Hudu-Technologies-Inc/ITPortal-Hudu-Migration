@@ -20,11 +20,6 @@ notepad my-environment.ps1
 ```
 
 ```
-copy-item environment.example.ps1 my-environment.ps1
-notepad my-environment.ps1
-```
-
-```
 $exportLocation = "X:\yourITPexport"            # this is where you've unzipped your itportal export
 $tmpDir="X:\itp\tmp"                            # designated temporary base directory for converting potentially sensitive files
 $hudubaseurl = "yourcompany.huducloud.com"      # your hudu instance url
