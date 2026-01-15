@@ -47,33 +47,57 @@ While all these objects get moved over, including the source images, the images 
 
 ## information on Jobs/Tasks
 
-#### 1. **Read-Data** Task
+### 1. **Read-Data** Task
 gets initial information about your Hudu instance, whether or not your internal company exists yet, and what kinds of assets and companies you already have there.
 
-#### 2. **Assets-And-Layouts** Task
+<img width="596" height="538" alt="image" src="https://github.com/user-attachments/assets/ae6a5a4d-c344-46c7-a67d-92d0360de97d" />
+
+### 2. **Assets-And-Layouts** Task
 Accounts, ConfigItems, Agreements, Devices, Contacts, Sites get moved over during the 'Assets-And-Layouts' Job as Assets in Hudu. Companies are created during this job as well (as Companies in Hudu)
 When this job finishes, all created assets can be found in a folder in the project directory, named Debug. The assets dump file is named 'CreatedAssets.json'
 
-#### 3. **Fetch-Docs** Task
+<img width="1882" height="922" alt="image" src="https://github.com/user-attachments/assets/a2d55579-e9bf-427d-aff8-6b90413c6dc1" />
+
+This job is the heart of the migration and does take a while, sometimes several hours for a larger migration.
+
+### 3. **Fetch-Docs** Task
 Fetch-Docs job requires a fresh 'CookieJar.Json' file for downloading the source document files. You only need to refresh this file (see section below) a few times, but it is important to keep this file current when asked, especially for larger migrations.
 
-#### 4. **Create-Articles-FromFiles** Task
+<img width="1876" height="208" alt="image" src="https://github.com/user-attachments/assets/6c8f76c7-fab1-41f4-99ec-008bbe56e319" />
+
+Sometimes the KB or Document Record that we reference from CSV doesnt include a Filename attribute, so we rely on some basic file parsing to identify filetype by encoding, file header, and magic bytes
+
+<img width="1908" height="554" alt="image" src="https://github.com/user-attachments/assets/ef5bc50f-2545-4b9e-9d2e-acdbba7db674" />
+
+### 4. **Create-Articles-FromFiles** Task
 Documents are downloaded programmatically and converted/added to Hudu as Articles during the 'Create-Articles-FromFiles' Job.
 When this job finishes, all Articles from Files can be found in a folder in the project directory, named Debug. The assets dump file is named 'Articles-FromFiles.json'.
 
-#### 5. **Create-Articles-FromRecords** Task
+This part is pretty simple. We use LibreOffice and the proven 'Articles-Anywhere' client library to convert any files that we were able to grab from ITPortal. This includes images, all manor of text documents, pdf's, presentations, and spreadsheets.
+
+<img width="1712" height="850" alt="image" src="https://github.com/user-attachments/assets/b3a90c9b-04b9-4d84-aefc-0a89dc3ec943" />
+
+There are very few filetypes that can't be handled this way, but if we encounter such a condition, we simply upload the file in-place and attach it to a reference article.
+
+### 5. **Create-Articles-FromRecords** Task
 KBs And Documents get created as Articles in Hudu from your CSV export During 'Create-Articles-FromRecords' Job. This Job requires that you have a fresh 'CookieJar.Json' File in order to download images in these articles.
 When this job finishes, all Articles from CSV can be found in a folder in the project directory, named Debug. The assets dump file is named 'Articles-FromRecords.json'. These are organized by whether they started as a kb object or an embedded document object.
 
-#### 6. **Submit-Passwords** Task
+<img width="1884" height="502" alt="image" src="https://github.com/user-attachments/assets/929efb4c-51b8-4de3-b7cf-126c57fcd293" />
+
+### 6. **Submit-Passwords** Task
 Device-Passwords, Account-Passwords, LocalPasswords, and FieldPasswords are created during the 'Submit-Passwords' Job. During which, they are also related to any documents or assets as-needed.
 When this job finishes, all passwords from csv export can be found in a folder in the project directory, named Debug. The assets dump file is named 'PasswordsCreated.json'. They will be organized by the type of password they originally had been.
 
-#### 7. **Set-Relations** Task
+<img width="1034" height="558" alt="image" src="https://github.com/user-attachments/assets/f1158425-6442-469b-8102-c8b95f8d5f9b" />
+
+### 7. **Set-Relations** Task
 Relationships are created during the 'Set-Relations' job based on ITportal identifiers and companies they belong to. 
 When this job finishes, all passwords from csv export can be found in a folder in the project directory, named Debug. The assets dump file is named 'relationsCreated.json'. They will be organized by the type of relationship they represent (to or from an asset or article)
 
-There is an optional wrap-up task as well, but that will become a thing of the past as these other tasks are improved upon.
+<img width="1876" height="852" alt="image" src="https://github.com/user-attachments/assets/0cb5cb3c-6195-4bad-b6bd-3d16528255fb" />
+
+There is an optional wrap-up task as well, but that will become a thing of the past as these other tasks are improved upon. The only real clean-up that might need to be handled manually is renaming any fields that you want to be renamed or possibly listify-ing fields (turning them into listselect)
 
 ## Cookie Jar
 Install the Cookie Manager extension and export cookies to `cookiejar.json` in this folder.
