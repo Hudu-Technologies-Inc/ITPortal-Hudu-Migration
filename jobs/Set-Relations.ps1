@@ -24,9 +24,21 @@ foreach ($r in $itportaldata.Agreements.csvdata) { $csvBy.Agreements["$($r.Agree
 foreach ($r in $itportaldata.KBs.csvdata)        { $csvBy.KBs["$($r.KBID)"] = $r }
 foreach ($r in $itportaldata.Documents.csvdata)  { $csvBy.Documents["$($r.DocumentID)"] = $r }
 $internalCompany = Get-OrSetInternalCompany -internalCompanyName $internalCompanyName
+$allHuduCompanies = get-huducompanies
+$allhuduArticles = Get-HuduArticles
+$devicesLayout = Get-HuduAssetLayouts -name "Devices" | Select-Object -First 1; $devicesLayout = $devicesLayout.asset_layout ?? $devicesLayout;
+$devicesObjects = Get-HuduAssets -AssetLayoutId $devicesLayout.id
+$sitesLayout = Get-HuduAssetLayouts -name "Sites" | Select-Object -First 1; $sitesLayout = $sitesLayout.asset_layout ?? $sitesLayout;
+$sitesObjects = Get-HuduAssets -AssetLayoutId $sitesLayout.id
+$configurationsLayout = Get-HuduAssetLayouts -name "ConfigItems" | Select-Object -First 1; $configurationsLayout = $configurationsLayout.asset_layout ?? $configurationsLayout;
+$configurationsObjects = Get-HuduAssets -AssetLayoutId $configurationsLayout.id
+$contactsLayout = Get-HuduAssetLayouts -name "Contacts" | Select-Object -First 1; $contactsLayout = $contactsLayout.asset_layout ?? $contactsLayout;
+$contactsObjects = Get-HuduAssets -AssetLayoutId $contactsLayout.id
+$agreementsLayout = Get-HuduAssetLayouts -name "Agreements" | Select-Object -First 1; $agreementsLayout = $agreementsLayout.asset_layout ?? $agreementsLayout;
+$agreeMentsObjects = Get-HuduAssets -AssetLayoutId $agreementsLayout.id
 
 $relationsCreated = @{}
-foreach ($key in $orderedKeys | where-object {$_ -in @("Devices","Sites","KBs","Documents","ConfigItems","Contacts","Agreements")}) {
+foreach ($key in @("Devices","Sites","KBs","Documents","ConfigItems","Contacts","Agreements")) {
     $csvRows = @($ITPortalData[$key].CsvData)
         foreach ($row in $csvRows) {
             $deviceMatched = if ($key -eq 'Devices') { $row.ForeignDeviceID } else { $row.DeviceID ?? $row.ForeignDeviceID }
