@@ -1,6 +1,11 @@
 # ITPortal → Hudu Migration
 Seamlessly migrate data, documents, and knowledge from ITPortal into Hudu.
 
+
+> **Permissions Notice**
+>
+> Some scripts may require elevated permissions. If you encounter access-related errors, consider launching PowerShell (`pwsh`) with **Run as Administrator**.
+
 ## Requirements
 
 - Hudu v2.39.6+
