@@ -8,10 +8,10 @@ $CreatedAssets = $CreatedAssets ?? @{}
 
 
 $orderedKeys = $ITPortalData.Keys | Sort-Object {switch ($_) {
-                                                'Sites'     { 0 }
-                                                'Companies' { 1 }
+                                                'Companies' { 0 }
+                                                'Sites'     { 1 }
                                                 'Devices'   { 2 }
-                                                'Configurations'   { 3 }
+                                                'ConfigItems'   { 3 }
                                                 'Contacts'   { 9 }
                                                 default     { 8 }
                                             }}, { $_ }
@@ -275,12 +275,21 @@ foreach ($key in $orderedKeys | where-object {$_ -notin $SkipTables -and $_ -not
         
             $GivenName = $row.name ?? $row.PSObject.Properties[0].Value ?? "Unnamed $key $($($([Guid]::NewGuid().ToString()) -split "-")[0])"
         }
+
+        if (-not $company -or -not $company.id -or $company.id -le 0){
+            $company = $internalCompany
+        }
+        if (-not $company -or -not $company.id -or $company.id -le 0){
+            Write-Error "Uprocessable Asset $GivenName - cannot attribute to company ($($($company | convertto-json -depth 99).ToString())), not even internal!"
+        }
+
         $assetRequest = @{
             AssetLayoutID = $al.id
             CompanyId     = $company.id
             Fields        = @()
             Name          = $GivenName
         }
+
 
         $existingAsset = Get-HuduASsets -CompanyId $company.id -name $GivenName -AssetLayoutId $al.id | select-object -first 1
         $existingAsset = $existingAsset.asset ?? $existingAsset
