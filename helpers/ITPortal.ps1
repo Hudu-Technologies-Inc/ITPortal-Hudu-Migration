@@ -257,7 +257,7 @@ function Get-ProperCookieJson {
   while ($false -eq $successReadCookies){
       try {
           Read-host "This step ($neededFor) requires a fresh set of cookies! Be sure to use 'cookie-editor' and export all cookies, writing or overwriting the file located at $project_workdir\cookiejar.json"
-          $CookieJson = $(get-content -Raw -Path "$project_workdir.\cookiejar.json" | ConvertFrom-Json -depth -99)
+          $CookieJson = $(get-content -Raw -Path "$project_workdir.\cookiejar.json" | ConvertFrom-Json -depth 99)
           $successReadCookies = $true
           break
       } catch {

@@ -60,6 +60,7 @@ $PassTypes = @("Passwords-FieldPasswords","Passwords-Devices","Passwords-LocalPa
 
 # tables to skip entirely in assets-and-layouts
 $SkipTables= @(
+    "Sites"
 )
 
 # junk props to ignore for specific layouts
