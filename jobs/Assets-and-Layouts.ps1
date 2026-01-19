@@ -52,7 +52,7 @@ foreach ($key in $orderedKeys | where-object {$_ -notin $SkipTables -and $_ -not
                     $companyUpdateRequest["$huduField"]=$rowVal                    
                 }
                 try {
-                    $companyDetails = set-huducompany @companyRequest
+                    $companyDetails = set-huducompany @companyUpdateRequest
                 } catch {
                     write-error "error updating company $_"
                 }
