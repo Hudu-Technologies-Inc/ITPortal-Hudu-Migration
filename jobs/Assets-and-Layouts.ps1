@@ -8,7 +8,6 @@ $CreatedAssets = $CreatedAssets ?? @{}
 
 
 $orderedKeys = $ITPortalData.Keys | Sort-Object {switch ($_) {
-                                                'Companies' { 0 }
                                                 'Sites'     { 1 }
                                                 'Devices'   { 2 }
                                                 'ConfigItems'   { 3 }

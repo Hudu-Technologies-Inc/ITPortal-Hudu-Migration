@@ -263,7 +263,9 @@ function Ensure-HuduCompany {
 
             if ($company) {
                 if ($HuduCompanies.Value) {
-                    $HuduCompanies.Value += $company
+                    try {
+                        $HuduCompanies.Value += $company
+                    } catch {}
                 }
                 else {
                     $HuduCompanies.Value = @($company)
