@@ -22,6 +22,7 @@ $IgnoreFields = @(
     "Lock",
     "LockClients",
     "CustomerID",
+    "SiteTime",
     "ChangeCount",
     "ChangesCount",
     "IgnoreGlobalAllow",
