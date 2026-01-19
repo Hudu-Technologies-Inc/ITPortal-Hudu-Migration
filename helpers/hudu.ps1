@@ -233,7 +233,7 @@ function Get-OtpAuthParams {
         $k = $pair.Substring(0, $eq)
         $v = [uri]::UnescapeDataString($pair.Substring($eq + 1))
 
-        if ($k -ieq 'secret') { $result.secret = $v }
+        if ($k -ieq 'secret') { $result.secret = ("$v" -replace '\s', '') }
         elseif ($k -ieq 'issuer') { $result.issuer = $v }
     }
 
