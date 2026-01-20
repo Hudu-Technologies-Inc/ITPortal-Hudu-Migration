@@ -11,6 +11,6 @@ $ITPortalSubdomain = "YourCompany"              # this is the subdomain of your 
 $ITPhostname="$ITPortalSubdomain.itportal.com"  # this is the full hostname of your itportal instance
 
 
-$CookieJson = $(get-content -Raw -Path ".\cookiejar.json" | ConvertFrom-Json -depth -99)
+# $CookieJson = $(get-content -Raw -Path ".\cookiejar.json" | ConvertFrom-Json -depth -99)
 
 . .\Migrate-ITPortal-Hudu.ps1
