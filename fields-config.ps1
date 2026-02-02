@@ -6,6 +6,14 @@ $specialObjectTypes = @{
     "ipnetworks"                    = "ipam"
 }
 
+$ListableFields = @(
+    
+)
+$LabelMappings = @{
+
+}
+
+
 # junk props to ignore globally
 $IgnoreFields = @(
     "mod_date",
