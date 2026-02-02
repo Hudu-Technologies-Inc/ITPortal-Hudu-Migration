@@ -7,13 +7,72 @@ $specialObjectTypes = @{
 }
 
 $ListableFields = @(
-    
+
 )
-$LabelMappings = @{
-
-}
-
-
+$LabelMappings = @{}
+$labelMappings["deviceType"]="Device Type"
+$labelMappings["EmailExpire"]="Email Expiry"
+$labelMappings["IPAddresses"]="IP Addresses"
+$labelMappings["IPNetworks"]="IP Networks"
+$labelMappings["SubnetMasks"]="Subnet Masks"
+$labelMappings["MACs"]="MAC Addresses"
+$labelMappings["Descriptions"]="Description"
+$labelMappings["SwitchPorts"]="Switch Ports"
+$labelMappings["InstallDate"]="Installed At"
+$labelMappings["os"]="Operating System"
+$labelMappings["WarrantyExpires"]="Warranty Expires"
+$labelMappings["PurchaseDate"]="Purchased At"
+$labelMappings["notebit"]="Supplementary Notes"
+$labelMappings["altLink"]="Alternative Link"
+$labelMappings["altLinkDescription"]="Alternative Link Notes"
+$labelMappings["FollowUpDate"]="FollowUp Date"
+$labelMappings["InOutNotes"]="In Out Notes"
+$labelMappings["LeaseEndDate"]="Lease End Date"
+$labelMappings["RetireDate"]="Retire Date"
+$labelMappings["ProductKey"]="Product Key"
+$labelMappings["lastLoggedInUser"]="Last Logged In User"
+$labelMappings["InputHost"]="Input Host"
+$labelMappings["InputDate"]="Created At"
+$labelMappings["servicepack"]="Service Pack"
+$labelMappings["HardDiskInfo"]="HDD Notes"
+$labelMappings["AgreementType"]="Agreement Type"
+$labelMappings["ExpireDate"]="Expired At"
+$labelMappings["SiteHost"]="Site Host"
+$labelMappings["SiteDate"]="Site Date"
+$labelMappings["SubmitTime"]="Updated At"
+$labelMappings["InOutDatetime"]="Checked In or Out At"
+$labelMappings["InOutNotes"]="Check In or Out Notes"
+$labelMappings["address"]="Address"
+$labelMappings["address2"]="Address Line 2"
+$labelMappings["city"]="City"
+$labelMappings["state"]="State"
+$labelMappings["telephone"]="Telephone"
+$labelMappings["Email"]="Email"
+$labelMappings["OptOut"]="Opt Out"
+$labelMappings["FullName"]="Full Name"
+$labelMappings["TechTel"]="Technical Telephone"
+$labelMappings["IssueDate"]="Installed At"
+$labelMappings["ExpireDate"]="Expires At"
+$labelMappings["MiddleInitial"]="Middle Initial"
+$labelMappings["Cell"]="Cell Phone"
+$labelMappings["HomePhone"]="Home Phone"
+$labelMappings["Ext"]="Extension"
+$labelMappings["InOut"]="Checked In or Out"
+$labelMappings["InOutDatetime"]="Checked In or Out At"
+$labelMappings["city"]=""
+$labelMappings["state"]="State/Province"
+$labelMappings["telephone"]="Phone"
+$labelMappings["ConfigObjectType"]="Configuration Type"
+$labelMappings["ciName"]="Configuration Name"
+$labelMappings["ciDescription"]="Configuration Description"
+$labelMappings["devicetype"]="Device Type"
+$labelMappings["ConfigObjectIMG"]=""
+$labelMappings["img"]="Image"
+$labelMappings["CINotes"]="Configuration Notes"
+$labelMappings["URLMetaData"]="URL Metadata"
+$labelMappings["AccountType"]="Account Type"
+$labelMappings["InputHost"]="Input Host"
+$labelMappings["twofasecret"]="MFA Secret"
 # junk props to ignore globally
 $IgnoreFields = @(
     "mod_date",
