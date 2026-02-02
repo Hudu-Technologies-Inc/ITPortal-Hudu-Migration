@@ -31,6 +31,24 @@ function LabelIsRichtext {
     return $false
 }
 
+function Set-TitleCased {
+    param ([string]$label)
+    if ([string]::IsNullOrWhiteSpace($label)) { return $label }
+
+    return (Get-Culture).TextInfo.ToTitleCase($label.ToLower())
+}
+
+function ApplyUserLabelMappings {
+    param (
+        [string]$label,
+        [hashtable]$mappings
+    )
+    if ($mappings.ContainsKey($label)) {
+        return $(Set-TitleCased $mappings[$label])
+    }
+    return $(Set-TitleCased $label)
+}
+
 function LabelIsWebsite {
     param ([string]$label)
     if ([string]::IsNullOrWhiteSpace($label)) { return $false }
@@ -311,8 +329,8 @@ function Test-IsListSelect {
     param (
         [object[]]$Values,
         [int]$MinSamples = 20,
-        [int]$MaxUnique  = 10,
-        [double]$MaxRatio = 0.20
+        [int]$MaxUnique  = 30,
+        [double]$MaxRatio = 0.45
     )
 
     # Strip nulls, blanks
