@@ -10,7 +10,7 @@ foreach ($passType in $PassTypes) {
             write-host "skipping empty password entry: $($pass.Name)" -ForegroundColor Yellow
             continue
         }
-        $otpInput = $pass.'2fasecret'
+        $otpInput = $pass.'2fasecret' ?? $pass.'twofasecret'
 
         $matchedCompany = Get-HuduCompanies -Name $pass.company; $matchedCompany = $matchedCompany.company ?? $matchedCompany;
         if ($null -eq $matchedCompany -or $matchedCompany.id -lt 1) {$matchedCompany= $internalCompany}
