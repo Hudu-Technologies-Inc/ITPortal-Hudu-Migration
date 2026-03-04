@@ -395,13 +395,13 @@ function Omni-Relate {
                 $mentionedArticles += $companyArticles | Where-Object { $_.content -and $_.content.Contains("$(_Normalize-WebsiteURL $fieldValue)") -or ($_.Name -and $_.Name.Contains("$(_Normalize-WebsiteURL $fieldValue)")) }
                 $mentionedAssets += $companyAssets | Where-Object { $_.name -and $_.name.Contains("$(_Normalize-WebsiteURL $fieldValue)") }
             }
-            $a.fields | Where-Object {$_.field_type -eq "RichText"} | ForEach-Object {
+            $a.fields | Where-Object {$_.field_type -eq "RichText" -or $_.field_type -eq "Header" -or $_.field_type -eq "Embed"} | ForEach-Object {
                 $fieldValue = $_.value
                 $mentionedWebsites += $companywebsites | Where-Object { $fieldValue -icontains $normalizedAssetName -or $(_Normalize-AssetName $_.name) -ieq $normalizedAssetName -or $fieldValue -icontains $_.name -or $_.notes -icontains $normalizedAssetName -or $_.notes -icontains $a.name }
                 $mentionedArticles += $companyArticles | Where-Object { $_.content -and $_.content.Contains($normalizedAssetName) -or $_.content -icontains $a.name -or $normalizedAssetName -ieq (_Normalize-AssetName $_.name) }
                 $mentionedAssets += $companyAssets | Where-Object { $fieldValue -and $fieldValue.Contains($normalizedAssetName) -or $fieldValue.Contains($a.name) }
             }       
-            $a.fields | Where-Object {$_.field_type -eq "Text"} | ForEach-Object {
+            $a.fields | Where-Object {$_.field_type -eq "Text" -or $_.field_type -eq "Phone" -or $_.field_type -eq "Email"} | ForEach-Object {
                 $fieldValue = $_.value
                 $mentionedArticles += $companyArticles | Where-Object { $(_Normalize-AssetName $_.name) -ieq $(_Normalize-AssetName $fieldValue) }
                 $mentionedWebsites += $companywebsites | Where-Object { $(_Normalize-AssetName $_.value) -ieq $normalizedAssetName }

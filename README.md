@@ -58,10 +58,10 @@ And then you can kick it off by opening `pwsh7` session as `administrator`, and 
 - `Documents` from *CSV export* as `Articles`
 - `Documents` as *Files downloaded from ITportal* are *converted* to *editable* `Articles`
 - `Device-Passwords`, `Account-Passwords`, `LocalPasswords`, and `FieldPasswords` are *all imported* as `AssetPasswords` and *related to objects in Hudu*
-- `Relationships` are *carried over*
+- `Relationships` are *carried over* (now includes implicit, text/value-based relationships from ITPortal)
 
 ## What Doesnt get Moved Over?
-While all these objects get moved over, including the source images, the images set for companies will need to be re-applied from the images uploaded into hudu (for now)
+While all these objects get moved over, including the source images, the images set for companies will need to be re-applied from the images uploaded into hudu (for now). If your companies are registerd with logo.dev, this is already taken care of for you, however.
 
 ## information on Jobs/Tasks
 
@@ -128,6 +128,31 @@ When this job finishes, all *passwords from csv export* can be found in a folder
 When this job finishes, all *relations from csv export* can be found in a folder in the project directory, named `Debug`. The assets dump file is named `relationsCreated.json`. They will be organized by the *type of relationship* they represent **(to or from an asset or article)**
 
 <img width="1876" height="852" alt="image" src="https://github.com/user-attachments/assets/0cb5cb3c-6195-4bad-b6bd-3d16528255fb" />
+
+### 8. **Wrap-Up** Task
+
+This job is pretty straightforward and adds ancillary or implicit text-value-based relationships. Your contact is mentioned in an article? They will be linked. Your website entry is also referenced by an asset? they will be linked.
+
+Further, this job also bulk-renames fields, giving them more pleasing names.
+There is a pre-filled matrix of known ITPortal object properties in `fields-config.ps1`. You can enter your own field name overrides here, or modify the existing 'sane defaults'. If you need to review these before applying, you'll be given an opportunity before this runs.
+
+They are a hashtable in the variable, named `labelMappings`, in the format of:
+
+```powershell
+$labelmappings["less-desireable-label"] = "Beautiful and Friendly Label"
+```
+
+You can add as many as you'd like. It's pre-filled with dozens of common object properties we encounter when migrating ITPortal instances, as in the examples below. You can really name these fields anything you desire.
+
+```powershell
+$labelMappings["altLinkDescription"]="Alternative Link Notes"
+```
+
+or
+
+```powershell
+$labelMappings["InOutDatetime"]="Checked In or Out At"
+```
 
 ---
 
