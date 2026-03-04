@@ -12,7 +12,7 @@ $jobs = @(
 "Create-Articles-FromFiles",
 "Submit-Passwords",
 "Set-Relations"
-# "Wrap-Up"
+"Wrap-Up"
 )
 
 $exportLocation = $exportLocation ?? (Read-Host "please enter the full path to your export.")

@@ -1,25 +1,25 @@
 # one-time switch for non-idemnopotent actions that we only want to do once
-$listsApplied = $listsApplied ?? $false
-if ($false -eq $listsApplied){
-    write-host "listifying select-fields."
-    foreach ($layout in @{
-    "Devices" = @("os","Make","Model")
-    "Accounts" = @("Account Type")
-    "ConfigItems"  = @("Configuration Type","Vendor")
-    }){
-        $layout = $null; $field = $null;
-        $layout = get-huduassetlayouts -name $layout.key | select-object -first 1; $layout = $layout.asset_layout ?? $layout;
-        $fields = $layout.fields | where-object { $_.label -in $layout.value -and $_.field_type -ne "ListSelect" }
-        foreach ($field in $fields){
-            write-host " Processing listify for asset layout $($layout.name) field $($field.label)" -ForegroundColor Cyan
-            $layout = get-huduassetlayouts -name $layout.key | select-object -first 1; $layout = $layout.asset_layout ?? $layout;
-            Listify-TextField -assetlayout $layout -fieldlabel $field.label
-        }
-    }
-    write-host "Applying listify to applicable fields on asset layouts. This will convert text fields that contain comma-separated values into actual lists that can be easily filtered and reported on. This is a crucial step for ensuring that your data is structured properly in Hudu and can be utilized effectively." -ForegroundColor Green
-    $listsApplied = $true
-}
-# one-time switch for non-idemnopotent actions that we only want to do once
+# $listsApplied = $listsApplied ?? $false
+# if ($false -eq $listsApplied){
+#     write-host "listifying select-fields."
+#     foreach ($layout in @{
+#     "Devices" = @("os","Make","Model")
+#     "Accounts" = @("Account Type")
+#     "ConfigItems"  = @("Configuration Type","Vendor")
+#     }){
+#         $layout = $null; $field = $null;
+#         $layout = get-huduassetlayouts -name $layout.key | select-object -first 1; $layout = $layout.asset_layout ?? $layout;
+#         $fields = $layout.fields | where-object { $_.label -in $layout.value -and $_.field_type -ne "ListSelect" }
+#         foreach ($field in $fields){
+#             write-host " Processing listify for asset layout $($layout.name) field $($field.label)" -ForegroundColor Cyan
+#             $layout = get-huduassetlayouts -name $layout.key | select-object -first 1; $layout = $layout.asset_layout ?? $layout;
+#             Listify-TextField -assetlayout $layout -fieldlabel $field.label
+#         }
+#     }
+#     write-host "Applying listify to applicable fields on asset layouts. This will convert text fields that contain comma-separated values into actual lists that can be easily filtered and reported on. This is a crucial step for ensuring that your data is structured properly in Hudu and can be utilized effectively." -ForegroundColor Green
+#     $listsApplied = $true
+# }
+# one-time switch for long-running actions. though idemnopotent, we only need to do once
 $omniRelateApplied = $omniRelateApplied ?? $false
 if ($false -eq $omniRelateApplied){
     write-host "picking up and applying any lingering relationships that may not have been directly matched. This can take a while, please be patient."
