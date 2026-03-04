@@ -358,9 +358,9 @@ function Omni-Relate {
 
     if (get-command -name Set-HapiErrorsDirectory -ErrorAction SilentlyContinue){try {Set-HapiErrorsDirectory -skipRetry $true} catch {}}
     write-host "getting companies"; $allcompanies = get-huducompanies;
-    write-host "$($allAssets.count) assets"; $allAssets = get-huduassets -CompanyId $companyID;
+    write-host "$($allAssets.count) assets (please be patient, this can take some time.)"; $allAssets = get-huduassets -CompanyId $companyID;
     write-host "$($allWebsites.count) websites"; $allWebsites = get-huduwebsites | where-object {$_.company_id -eq $companyID};
-    write-host "$($allArticles) articles"; $allArticles = get-huduarticles -CompanyId $companyID;
+    write-host "$($allArticles) articles (please be patient, this can take some time.)"; $allArticles = get-huduarticles -CompanyId $companyID;
 
     foreach ($c in $allcompanies) { 
 
