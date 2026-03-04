@@ -298,3 +298,47 @@ function ConvertTo-ValidatedOtpSecret {
         }
     }
 }
+
+function Rename-HuduLayoutField {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)]
+        [int]$LayoutId,
+
+        [Parameter(ParameterSetName='ByLabel', Mandatory)]
+        [string]$OldLabel,
+
+        [Parameter(Mandatory)]
+        [string]$NewLabel,
+
+        [Parameter(ParameterSetName='ByLabel')]
+        [switch]$AllMatches
+    )
+
+    $layout = Get-HuduAssetLayouts -Id $LayoutId
+    if (-not $layout) { throw "LayoutId $LayoutId not found." }
+    if (-not $layout.fields) { throw "LayoutId $LayoutId has no fields." }
+
+    $fields = @($layout.fields)
+
+    $targets = $fields | Where-Object { ($_.label ?? '') -ieq $OldLabel }
+      
+    if (-not $targets -or $targets.Count -lt 1) {
+        throw "No matching field found (OldLabel='$OldLabel') in layout '$($layout.name)' (Id=$LayoutId)."
+    }
+
+    if ($PSCmdlet.ParameterSetName -eq 'ByLabel' -and $targets.Count -gt 1 -and -not $AllMatches) {
+        $ids = ($targets | Select-Object -ExpandProperty id) -join ', '
+        throw "Multiple fields matched label '$OldLabel' (case-insensitive). Matched FieldIds: $ids. Use -AllMatches or rename by -FieldId."
+    }
+
+    foreach ($t in $targets) {
+        $before = $t.label
+        if ($before -ceq $NewLabel) { continue }
+
+        if ($PSCmdlet.ShouldProcess("LayoutId=$LayoutId FieldId=$($t.id)", "Rename label '$before' -> '$NewLabel'")) {
+            $t.label = $NewLabel
+        }
+    }
+    Set-HuduAssetLayout -Id $LayoutId -Fields $fields
+}
