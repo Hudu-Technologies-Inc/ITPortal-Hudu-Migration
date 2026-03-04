@@ -2,6 +2,7 @@ $project_workdir = $PSScriptRoot
 . "$project_workdir\fields-config.ps1"
 
 $debugDir = Join-Path -path $project_workdir -childpath "Debug"
+$ITPortalMigrationStarted = $ITPortalMigrationStarted ?? (Get-Date)
 
 $jobs = @(
 "Read-Data",
@@ -10,8 +11,8 @@ $jobs = @(
 "Create-Articles-FromRecords",
 "Create-Articles-FromFiles",
 "Submit-Passwords",
-"Set-Relations"
-# "Wrap-Up"
+"Set-Relations",
+"Wrap-Up"
 )
 
 $exportLocation = $exportLocation ?? (Read-Host "please enter the full path to your export.")

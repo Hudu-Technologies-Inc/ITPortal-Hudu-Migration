@@ -298,3 +298,188 @@ function ConvertTo-ValidatedOtpSecret {
         }
     }
 }
+
+
+
+function ConvertTo-HashtableDeep {
+    [CmdletBinding()]
+    param(
+        [Parameter(ValueFromPipeline)]
+        $InputObject
+    )
+
+    process {
+        if ($null -eq $InputObject) { return $null }
+
+        if ($InputObject -is [System.Collections.IDictionary]) {
+            $h = @{}
+            foreach ($k in $InputObject.Keys) {
+                $h[$k] = ConvertTo-HashtableDeep -InputObject $InputObject[$k]
+            }
+            return $h
+        }
+
+        if ($InputObject -is [System.Collections.IEnumerable] -and $InputObject -isnot [string]) {
+            return @($InputObject | ForEach-Object { ConvertTo-HashtableDeep -InputObject $_ })
+        }
+
+        if ($InputObject -is [psobject]) {
+            $h = @{}
+            foreach ($p in $InputObject.PSObject.Properties) {
+                $h[$p.Name] = ConvertTo-HashtableDeep -InputObject $p.Value
+            }
+            return $h
+        }
+
+        return $InputObject
+    }
+}
+
+function Omni-Relate {
+    
+    function _Normalize-AssetName {
+        param([string]$Name)
+        if ([string]::IsNullOrWhiteSpace($Name)) { return "" }
+        $n = $Name.Normalize([Text.NormalizationForm]::FormKC)
+        $n = $n -replace '&nbsp;',' ' -replace '\s+',' '
+        $n = $n.Trim().ToLowerInvariant()
+        return $n
+    }
+
+    function _Normalize-WebsiteURL {
+        param([string]$Url)
+        if ([string]::IsNullOrWhiteSpace($Url)) { return $null }
+        $u = $Url.Trim()
+        if ($u -match '^(https?://)?(?<host>[^/]+)(?<rest>/.*)?$') {
+            $hostname = $matches.host.ToLowerInvariant()
+            return $hostname.ToLowerInvariant()
+        }
+        return $u.ToLowerInvariant()
+    }
+
+    if (get-command -name Set-HapiErrorsDirectory -ErrorAction SilentlyContinue){try {Set-HapiErrorsDirectory -skipRetry $true} catch {}}
+    write-host "obtaining companies..."; $allcompanies = get-huducompanies;
+    write-host "obtaining assets (please be patient, this can take some time.)"; $allAssets = get-huduassets;
+    write-host "obtaining websites..."; $allWebsites = get-huduwebsites;
+    write-host "obtaining articles... (please be patient, this can take some time.)"; $allArticles = get-huduarticles;
+
+    foreach ($c in $allcompanies) { 
+
+        $companyAssets = $allAssets | Where-Object { $_.company_id -eq $c.id }
+        $companywebsites = $allWebsites | Where-Object { $_.company_id -eq $c.id }
+        $companyArticles = $allArticles | Where-Object { $_.company_id -eq $c.id }
+
+        $companyAssetsByName = $companyAssets | Group-Object { _Normalize-AssetName $_.name } -AsHashTable -AsString
+
+        foreach ($a in $companyAssets) {
+            $normalizedAssetName = _Normalize-AssetName $a.name
+
+            $mentionedWebsites = @()
+            $mentionedArticles = @()
+            $mentionedAssets = @()
+
+            # websites and articles matched by name/description -> name of asset
+            if ($companywebsites) {
+                $mentionedWebsites = $companywebsites | Where-Object { $_.Notes -and $_.Notes.Contains($normalizedAssetName) }
+            }
+            if ($companyArticles) {
+                $mentionedArticles = $companyArticles | Where-Object { ($_.Name -and $_.Content.Contains($a.name)) -or ($_.Content -and $_.Content.Contains($normalizedAssetName)) }
+            }
+
+
+            # websites where name or url is mentioned in text/richtext fields of the asset
+            # articles with content or name mentioned in a website field (either website field or text/richtext fields)
+            $a.fields | Where-Object {$_.field_type -eq "Website"} | ForEach-Object {
+                $fieldValue = $_.value
+                $mentionedWebsites += $companywebsites | Where-Object { "$(_Normalize-WebsiteURL $fieldValue)*" -ilike "$(_Normalize-WebsiteURL $_.name)*" -or $_.name -icontains "$(_Normalize-WebsiteURL $fieldValue)" -or $_.name -icontains $normalizedAssetName }
+                $mentionedArticles += $companyArticles | Where-Object { $_.content -and $_.content.Contains("$(_Normalize-WebsiteURL $fieldValue)") -or ($_.Name -and $_.Name.Contains("$(_Normalize-WebsiteURL $fieldValue)")) }
+                $mentionedAssets += $companyAssets | Where-Object { $_.name -and $_.name.Contains("$(_Normalize-WebsiteURL $fieldValue)") }
+            }
+            $a.fields | Where-Object {$_.field_type -eq "RichText"} | ForEach-Object {
+                $fieldValue = $_.value
+                $mentionedWebsites += $companywebsites | Where-Object { $fieldValue -icontains $normalizedAssetName -or $(_Normalize-AssetName $_.name) -ieq $normalizedAssetName -or $fieldValue -icontains $_.name -or $_.notes -icontains $normalizedAssetName -or $_.notes -icontains $a.name }
+                $mentionedArticles += $companyArticles | Where-Object { $_.content -and $_.content.Contains($normalizedAssetName) -or $_.content -icontains $a.name -or $normalizedAssetName -ieq (_Normalize-AssetName $_.name) }
+                $mentionedAssets += $companyAssets | Where-Object { $fieldValue -and $fieldValue.Contains($normalizedAssetName) -or $fieldValue.Contains($a.name) }
+            }       
+            $a.fields | Where-Object {$_.field_type -eq "Text"} | ForEach-Object {
+                $fieldValue = $_.value
+                $mentionedArticles += $companyArticles | Where-Object { $(_Normalize-AssetName $_.name) -ieq $(_Normalize-AssetName $fieldValue) }
+                $mentionedWebsites += $companywebsites | Where-Object { $(_Normalize-AssetName $_.value) -ieq $normalizedAssetName }
+            }
+    
+            # "siblings": other assets with same normalized name but different id
+            $siblings = @($companyAssetsByName[$normalizedAssetName] | Where-Object { $_.id -ne $a.id })
+            $siblings | ForEach-Object {write-host "Sibling Asset $($a.name)@($($a.asset_layout_id)) -> $($_.name)@($($_.asset_layout_id))"; New-HuduRelation -FromableType "Asset" -ToableType "Asset" -FromableID $a.id -ToableID $_.id}
+            $mentionedWebsites | ForEach-Object {Write-Host "[$($c.name)] '$($a.name)' ($($a.id)) mentions website -> '$($_.name)' ($($_.id))"; New-HuduRelation -FromableType "Asset" -ToableType "Website" -FromableID $a.id -ToableID $_.id}
+            $mentionedArticles | ForEach-Object {Write-Host "[$($c.name)] '$($a.name)' ($($a.id)) mentions article -> '$($_.name)' ($($_.id))"; New-HuduRelation -FromableType "Asset" -ToableType "Article" -FromableID $a.id -ToableID $_.id}
+            $mentionedAssets | ForEach-Object {Write-Host "[$($c.name)] '$($a.name)' ($($a.id)) mentions asset -> '$($_.name)' ($($_.id))"; New-HuduRelation -FromableType "Asset" -ToableType "Asset" -FromableID $a.id -ToableID $_.id}        
+            write-host @"
+Siblings: $($siblings.count)
+Websites Mentioned: $($mentionedWebsites.count)
+Articles Mentioned: $($mentionedArticles.count)
+Assets Mentioned: $($mentionedAssets.count)
+"@
+        }
+    }
+    if (get-command -name Set-HapiErrorsDirectory -ErrorAction SilentlyContinue){try {Set-HapiErrorsDirectory -skipRetry $false} catch {}}
+
+}
+
+function Rename-HuduLayoutFieldsBulk {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$LabelMappings,
+        [Parameter(ValueFromPipeline)]
+        $Layouts
+    )
+
+    begin {
+        $map = [System.Collections.Generic.Dictionary[string,string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($k in $LabelMappings.Keys) { $map[$k] = [string]$LabelMappings[$k] }
+        $totalRenamed = 0
+        $totalLayoutsTouched = 0
+    }
+
+    process {
+        foreach ($layoutIn in @($Layouts)) {
+            $layout = $layoutIn.asset_layout ?? $layoutIn
+            if (-not $layout -or -not $layout.fields) { continue }
+
+            $changed = $false
+            $renamedHere = 0
+
+            foreach ($f in $layout.fields) {
+                $old = [string]($f.label ?? '')
+                if ([string]::IsNullOrWhiteSpace($old)) { continue }
+                $has = $false
+                $new = $null
+
+                $has = $map.TryGetValue($old, [ref]$new)
+
+                if (-not $has) { continue }  # empty field label (shouldnt happen)
+                if ([string]::IsNullOrWhiteSpace($new)) { continue }  # empty user-mapping
+                if ($old -ceq $new) { continue } # already correct (case-sensitive compare)
+
+                $f.label = $new
+                $changed = $true
+                $renamedHere++
+            }
+
+            if ($true -eq $changed) {
+                if ($PSCmdlet.ShouldProcess("LayoutId=$($layout.id) '$($layout.name)'", "Rename $renamedHere field label(s)")) {
+                    $fieldsPayload = @($layout.fields | ForEach-Object { ConvertTo-HashtableDeep -InputObject $_ })
+                    Set-HuduAssetLayout -Id $layout.id -Fields $fieldsPayload
+                }
+
+                Write-Host ("[{0}] {1} field(s) renamed" -f $layout.name, $renamedHere) -ForegroundColor Green
+                $totalRenamed += $renamedHere
+                $totalLayoutsTouched++
+            }
+        }
+    }
+
+    end {
+        Write-Host ("Done. Renamed {0} field(s) across {1} layout(s)." -f $totalRenamed, $totalLayoutsTouched) -ForegroundColor Cyan
+    }
+}
