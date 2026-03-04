@@ -299,52 +299,43 @@ function ConvertTo-ValidatedOtpSecret {
     }
 }
 
-function Rename-HuduLayoutField {
-    [CmdletBinding(SupportsShouldProcess)]
+
+
+function ConvertTo-HashtableDeep {
+    [CmdletBinding()]
     param(
-        [Parameter(Mandatory)]
-        [int]$LayoutId,
-
-        [Parameter(ParameterSetName='ByLabel', Mandatory)]
-        [string]$OldLabel,
-
-        [Parameter(Mandatory)]
-        [string]$NewLabel,
-
-        [Parameter(ParameterSetName='ByLabel')]
-        [switch]$AllMatches
+        [Parameter(ValueFromPipeline)]
+        $InputObject
     )
 
-    $layout = Get-HuduAssetLayouts -Id $LayoutId
-    if (-not $layout) { throw "LayoutId $LayoutId not found." }
-    if (-not $layout.fields) { throw "LayoutId $LayoutId has no fields." }
+    process {
+        if ($null -eq $InputObject) { return $null }
 
-    $fields = @($layout.fields)
-
-    $targets = $fields | Where-Object { ($_.label ?? '') -ieq $OldLabel }
-      
-    if (-not $targets -or $targets.Count -lt 1) {
-        throw "No matching field found (OldLabel='$OldLabel') in layout '$($layout.name)' (Id=$LayoutId)."
-    }
-
-    if ($PSCmdlet.ParameterSetName -eq 'ByLabel' -and $targets.Count -gt 1 -and -not $AllMatches) {
-        $ids = ($targets | Select-Object -ExpandProperty id) -join ', '
-        throw "Multiple fields matched label '$OldLabel' (case-insensitive). Matched FieldIds: $ids. Use -AllMatches or rename by -FieldId."
-    }
-
-    foreach ($t in $targets) {
-        $before = $t.label
-        if ($before -ceq $NewLabel) { continue }
-
-        if ($PSCmdlet.ShouldProcess("LayoutId=$LayoutId FieldId=$($t.id)", "Rename label '$before' -> '$NewLabel'")) {
-            $t.label = $NewLabel
+        if ($InputObject -is [System.Collections.IDictionary]) {
+            $h = @{}
+            foreach ($k in $InputObject.Keys) {
+                $h[$k] = ConvertTo-HashtableDeep -InputObject $InputObject[$k]
+            }
+            return $h
         }
+
+        if ($InputObject -is [System.Collections.IEnumerable] -and $InputObject -isnot [string]) {
+            return @($InputObject | ForEach-Object { ConvertTo-HashtableDeep -InputObject $_ })
+        }
+
+        if ($InputObject -is [psobject]) {
+            $h = @{}
+            foreach ($p in $InputObject.PSObject.Properties) {
+                $h[$p.Name] = ConvertTo-HashtableDeep -InputObject $p.Value
+            }
+            return $h
+        }
+
+        return $InputObject
     }
-    Set-HuduAssetLayout -Id $LayoutId -Fields $fields
 }
-
-
 function Omni-Relate {
+    
     function _Normalize-AssetName {
         param([string]$Name)
         if ([string]::IsNullOrWhiteSpace($Name)) { return "" }
@@ -431,4 +422,63 @@ Assets Mentioned: $($mentionedAssets.count)
     }
     if (get-command -name Set-HapiErrorsDirectory -ErrorAction SilentlyContinue){try {Set-HapiErrorsDirectory -skipRetry $false} catch {}}
 
+}
+
+function Rename-HuduLayoutFieldsBulk {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$LabelMappings,
+        [Parameter(ValueFromPipeline)]
+        $Layouts
+    )
+
+    begin {
+        $map = [System.Collections.Generic.Dictionary[string,string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($k in $LabelMappings.Keys) { $map[$k] = [string]$LabelMappings[$k] }
+        $totalRenamed = 0
+        $totalLayoutsTouched = 0
+    }
+
+    process {
+        foreach ($layoutIn in @($Layouts)) {
+            $layout = $layoutIn.asset_layout ?? $layoutIn
+            if (-not $layout -or -not $layout.fields) { continue }
+
+            $changed = $false
+            $renamedHere = 0
+
+            foreach ($f in $layout.fields) {
+                $old = [string]($f.label ?? '')
+                if ([string]::IsNullOrWhiteSpace($old)) { continue }
+                $has = $false
+                $new = $null
+
+                $has = $map.TryGetValue($old, [ref]$new)
+
+                if (-not $has) { continue }  # empty field label (shouldnt happen)
+                if ([string]::IsNullOrWhiteSpace($new)) { continue }  # empty user-mapping
+                if ($old -ceq $new) { continue } # already correct (case-sensitive compare)
+
+                $f.label = $new
+                $changed = $true
+                $renamedHere++
+            }
+
+            if ($true -eq $changed) {
+                if ($PSCmdlet.ShouldProcess("LayoutId=$($layout.id) '$($layout.name)'", "Rename $renamedHere field label(s)")) {
+                    $fieldsPayload = @($layout.fields | ForEach-Object { ConvertTo-HashtableDeep -InputObject $_ })
+                    Set-HuduAssetLayout -Id $layout.id -Fields $fieldsPayload
+                }
+
+                Write-Host ("[{0}] {1} field(s) renamed" -f $layout.name, $renamedHere) -ForegroundColor Green
+                $totalRenamed += $renamedHere
+                $totalLayoutsTouched++
+            }
+        }
+    }
+
+    end {
+        Write-Host ("Done. Renamed {0} field(s) across {1} layout(s)." -f $totalRenamed, $totalLayoutsTouched) -ForegroundColor Cyan
+    }
 }

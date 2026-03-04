@@ -2,6 +2,7 @@ $project_workdir = $PSScriptRoot
 . "$project_workdir\fields-config.ps1"
 
 $debugDir = Join-Path -path $project_workdir -childpath "Debug"
+$ITPortalMigrationStarted = $ITPortalMigrationStarted ?? (Get-Date)
 
 $jobs = @(
 "Read-Data",
