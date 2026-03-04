@@ -11,7 +11,7 @@ $jobs = @(
 "Create-Articles-FromRecords",
 "Create-Articles-FromFiles",
 "Submit-Passwords",
-"Set-Relations"
+"Set-Relations",
 "Wrap-Up"
 )
 
