@@ -142,7 +142,7 @@ They are a hashtable in the variable, named `labelMappings`, in the format of:
 $labelmappings["less-desireable-label"] = "Beautiful and Friendly Label"
 ```
 
-You can add as many as you'd like. It's pre-filled with dozens of common object properties we encounter when migrating ITPortal instances, as in the examples below. You can really name these fields anything you desire.
+You can add as many as you'd like. It's pre-filled with dozens of common object properties we encounter when migrating ITPortal instances, as in the examples below. You can really name these fields anything you desire. You dont need to do this right away, but you'll be prompted to make any final edits before fields-config label mappings is used.
 
 ```powershell
 $labelMappings["altLinkDescription"]="Alternative Link Notes"
