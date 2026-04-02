@@ -794,5 +794,3 @@ function Omni-Relate {
     if (get-command -name Set-HapiErrorsDirectory -ErrorAction SilentlyContinue){try {Set-HapiErrorsDirectory -skipRetry $false} catch {}}
 
 }
-
-}
