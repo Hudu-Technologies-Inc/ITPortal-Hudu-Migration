@@ -35,6 +35,7 @@ $includeHiddenText=$true
 $includeComplexLayouts=$true
 $PopplerBins=$(join-path $project_workdir "tools\poppler")
 $PDFToHTML=$(join-path $PopplerBins "pdftohtml.exe")
+
 function Set-HuduInstance {
     param(
         [string]$HuduBaseURL,
