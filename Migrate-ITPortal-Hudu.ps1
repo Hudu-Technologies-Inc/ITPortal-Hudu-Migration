@@ -30,7 +30,7 @@ $ITPortalData =  @{}
 $MigrationErrors = @()
 
 foreach ($f in $(Get-ChildItem "$project_workdir\helpers" -Filter *.ps1)) {. $f.FullName}
- Get-PSVersionCompatible; Get-HuduModule; Set-HuduInstance; 
+ Get-PSVersionCompatible; Set-HuduModuleInitialized;
  Get-EnsuredPath $debugDir | Out-Null
  $internalCompany = Get-OrSetInternalCompany -internalCompanyName $internalCompanyName
 
