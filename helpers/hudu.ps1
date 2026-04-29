@@ -613,6 +613,7 @@ function Omni-Relate {
         )
 
         if ($FromType -eq $ToType -and [string]$FromId -eq [string]$ToId) { return }
+        if ($FromType -eq "IPAddress" -and $ToType -eq "IPAddress") { return }
 
         $relationKey = "$FromType|$FromId|$ToType|$ToId"
         if ($SeenRelations.ContainsKey($relationKey)) { return }
