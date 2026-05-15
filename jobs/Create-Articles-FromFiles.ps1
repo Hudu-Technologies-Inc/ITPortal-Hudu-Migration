@@ -3,16 +3,44 @@ $sofficePath = Get-LibreMSI -TmpFolder $DocConversionTempDir
 $internalCompany = Get-OrSetInternalCompany -internalCompanyName $internalCompanyName
 $ArticleMatches = $articleMatches ?? @{}
 
-$filesList = $null
-if if ($true -ne $useLocalFilesystemFiles){
-$filesList= @($(get-childitem -path "$ITPDownloads\Documents" -file -recurse)) + @($($(get-childitem -path "$ITPDownloads\KBs" -file -recurse)))
+$filesList = @()
+if ($true -ne $useLocalFilesystemFiles){
+    $fileItems = @($(get-childitem -path "$ITPDownloads\Documents" -file -recurse -ErrorAction SilentlyContinue)) + @($(get-childitem -path "$ITPDownloads\KBs" -file -recurse -ErrorAction SilentlyContinue))
+    foreach ($file in $fileItems) {
+        $record = $itportaldata.Documents.CsvData | Where-Object {$_.filename -ieq "$($file.name)"} | Select-Object -First 1
+        $itemType = 'Document'
+        if (-not $record) {
+            $record = $itportaldata.KBs.CsvData | Where-Object {$_.filename -ieq "$($file.name)"} | Select-Object -First 1
+            $itemType = 'KB'
+        }
+        $filesList += [pscustomobject]@{ File = $file; Record = $record; ItemType = $itemType }
+    }
 } else {
-$filesList= @($(get-childitem -path "$ITPDownloads\Documents" -file -recurse))
+    if (-not (Test-Path -LiteralPath $ITPDownloads)) {
+        throw "Local ITPortal filesystem path does not exist: $ITPDownloads"
+    }
+
+    $seenFiles = @{}
+    foreach ($record in @($itportaldata.Documents.CsvData)) {
+        foreach ($file in @(Get-ItPortalLocalRecordFiles -CsvRow $record -LocalRoot $ITPDownloads -ItemType Document)) {
+            if ($seenFiles.ContainsKey($file.FullName)) { continue }
+            $seenFiles[$file.FullName] = $true
+            $filesList += [pscustomobject]@{ File = $file; Record = $record; ItemType = 'Document' }
+        }
+    }
+    foreach ($record in @($itportaldata.KBs.CsvData)) {
+        foreach ($file in @(Get-ItPortalLocalRecordFiles -CsvRow $record -LocalRoot $ITPDownloads -ItemType KB)) {
+            if ($seenFiles.ContainsKey($file.FullName)) { continue }
+            $seenFiles[$file.FullName] = $true
+            $filesList += [pscustomobject]@{ File = $file; Record = $record; ItemType = 'KB' }
+        }
+    }
 }
 
-foreach ($doc in $filesList) {
+foreach ($item in $filesList) {
+    $doc = $item.File
     $uuid = [guid]::NewGuid().ToString()
-    $record = $null; $company = $null;
+    $record = $item.Record; $company = $null;
     $dest = Join-Path $DocConversionTempDir ("doc-" + $uuid)
     Get-EnsuredPath -Path $dest | Out-Null
 
@@ -25,7 +53,6 @@ foreach ($doc in $filesList) {
         updateOnMatch = $true
     }
 
-    $record = $itportaldata.Documents.CsvData | Where-Object {$_.filename -ieq "$($doc.name)"} | Select-Object -First 1
     if ($null -ne $record){
         $company = $(Get-HuduCompanies -Name $record.company | select-object -first 1); $company = $company.company ?? $company;
         if ($null -ne $company -and $company.id -ge 1){

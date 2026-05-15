@@ -27,14 +27,18 @@ if ($true -ne $useLocalFilesystemFiles){
         start-sleep 3
     }
 } else {
-    $doc = $null; $docName = $null;
-    $doc = get-childitem -recurse -path "$ITPDownloads" -file -filter "$($doc.filename)" | select-object -first 1
-    $doc = $doc ?? $(get-childitem -recurse -path "$ITPDownloads" -file -filter "*$($doc.filename)" | select-object -first 1)
-    $doc = $doc ?? $(get-childitem -recurse -path "$ITPDownloads" -file -filter "$($doc.filename)*"  | select-object -first 1)
-    $doc = $doc ?? $(get-childitem -recurse -path "$ITPDownloads" -file -filter "*$($doc.documentId)" | select-object -first 1)
-    $doc = $doc ?? $(get-childitem -recurse -path "$ITPDownloads" -file -filter "$($doc.documentId)*" | select-object -first 1)
-    if ($null -ne $doc -and -not ([string]::IsNullorEmpty($doc.FullName))) {
-        $docsFetched["$($doc.DocumentId)"]="$docname"
+    if (-not (Test-Path -LiteralPath $ITPDownloads)) {
+        throw "Local ITPortal filesystem path does not exist: $ITPDownloads"
+    }
+
+    foreach ($csvDoc in $itportaldata.Documents.CsvData) {
+        $localDocs = @(Get-ItPortalLocalRecordFiles -CsvRow $csvDoc -LocalRoot $ITPDownloads -ItemType Document)
+        if ($localDocs.Count -gt 0) {
+            Write-Host " Found $($localDocs.Count) local document file(s) for document $($csvDoc.DocumentId)" -ForegroundColor Cyan
+            $docsFetched["$($csvDoc.DocumentId)"] = @($localDocs.FullName)
+        } elseif (-not [string]::IsNullOrWhiteSpace([string]$csvDoc.FileName)) {
+            Write-Warning "Could not find local file for document $($csvDoc.DocumentId) / $($csvDoc.FileName)"
+        }
     }
 }
 

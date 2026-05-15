@@ -274,7 +274,7 @@ foreach ($key in $orderedKeys | where-object {$_ -notin $SkipTables -and $_ -not
             $GivenName = $row.name ?? $row.PSObject.Properties[0].Value ?? "Unnamed $key $($($([Guid]::NewGuid().ToString()) -split "-")[0])"
         }
         if ([string]::isnullorempty($givenName)){
-            $GivenName = "Un-Named-$key-$(get-random -minimum 1999 -maximum 1000)"
+            $GivenName = "Un-Named-$key-$(get-random -minimum 1999 -maximum 9999)"
         }
 
         if (-not $company -or -not $company.id -or $company.id -le 0){

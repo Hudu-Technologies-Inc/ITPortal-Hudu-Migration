@@ -13,15 +13,15 @@ $ITPortalMigrationStarted = $ITPortalMigrationStarted ?? (Get-Date)
 $jobs = @(
 "Read-Data",
 "Assets-and-Layouts",
-"Submit-Passwords",
-"Fetch-Docs",
-"Create-Articles-FromRecords",
-"Create-Articles-FromFiles",
-"Set-Relations"
+"Submit-Passwords"
+# "Fetch-Docs",
+# "Create-Articles-FromRecords",
+# "Create-Articles-FromFiles",
+# "Set-Relations"
 )
 
-$exportLocation = $exportLocation ?? (Read-Host "please enter the full path to your export.")
-$hudubaseUrl    = $hudubaseUrl    ?? (Read-Host "please enter the hudubase url.")
+    $exportLocation = $exportLocation ?? (Read-Host "please enter the full path to your export.")
+    $hudubaseUrl    = $hudubaseUrl    ?? (Read-Host "please enter the hudubase url.")
 $huduapikey     = $huduapikey     ?? (Read-Host "please enter your hudu api key.")
 
 if (-not (Test-Path -Path $exportLocation)) {

@@ -2,10 +2,12 @@ $DocConversionTempDir = $tmpDir ?? "c:\docs-tmp"
 
 
 $ArticleMatches = $articleMatches ?? @{}
+$internalCompany = $internalCompany ?? $(Get-OrSetInternalCompany -internalCompanyName $internalCompanyName)
 
-if if ($true -ne $useLocalFilesystemFiles){
-    $internalCompany = Get-OrSetInternalCompany -internalCompanyName $internalCompanyName
+if ($true -ne $useLocalFilesystemFiles){
     $cookieJson = Get-ProperCookieJson -project_workdir $project_workdir -neededFor "Fetching/Downloading Images from ITPortal Documents included in csv export"
+} elseif (-not (Test-Path -LiteralPath $ITPDownloads)) {
+    throw "Local ITPortal filesystem path does not exist: $ITPDownloads"
 }
 # step 2 - from knowledge base entries in CDSV, create hudu articles
 foreach ($doc in $itportaldata.KBs.CsvData) {
@@ -35,11 +37,15 @@ foreach ($doc in $itportaldata.KBs.CsvData) {
     }
     $article = $article.article ?? $article
     write-host " Created/Updated KB Article from CSV kb contents. $($article.name)" -ForegroundColor Green
-    if ($article -and ($true -ne $useLocalFilesystemFiles)) { 
+    if ($article) {
         $ArticleMatches["KBID_$($doc.KBID)"] = $article
-        $client = New-ITPHttpClientFromBrowserDump -CookieJson $CookieJSON -ITPhostname $ITPhostname -userId $ITPuserId -PortalOriginUrl "https://$ITPortalSubdomain.itportal.com/v4/app/kb/$($doc.kbid)?ClientID=0"
         $contents = $ArticleRequest.Content
-        $contents = Rewrite-ItPortalDownloadNoteFileLinks -Html $contents -BaseUrl "https://$ITPhostname" -Client $client -TempDir 'c:\docs-tmp' -Cache $cache -UploadableId $article.id
+        if ($true -eq $useLocalFilesystemFiles) {
+            $contents = Rewrite-ItPortalLocalNoteFileLinks -Html $contents -LocalRoot $ITPDownloads -Cache $cache -UploadableId $article.id
+        } else {
+            $client = New-ITPHttpClientFromBrowserDump -CookieJson $CookieJSON -ITPhostname $ITPhostname -userId $ITPuserId -PortalOriginUrl "https://$ITPortalSubdomain.itportal.com/v4/app/kb/$($doc.kbid)?ClientID=0"
+            $contents = Rewrite-ItPortalDownloadNoteFileLinks -Html $contents -BaseUrl "https://$ITPhostname" -Client $client -TempDir $DocConversionTempDir -Cache $cache -UploadableId $article.id
+        }
         $article = set-huduarticle -id $article.id -content $contents
         $article = $article.article ?? $article
         $ArticleMatches["KBID_$($doc.KBID)"] = $article
@@ -74,10 +80,15 @@ foreach ($doc in $itportaldata.documents.CsvData | where-object {-not ([string]:
     }
     $article = $article.article ?? $article
     write-host " Created/Updated KB Article from CSV doc contents. $($article.name)" -ForegroundColor Green
-    if ($article -and ($true -ne $useLocalFilesystemFiles)) { 
-        $client = New-ITPHttpClientFromBrowserDump -CookieJson $CookieJSON -ITPhostname $ITPhostname -userId $ITPuserId -PortalOriginUrl "https://$ITPortalSubdomain.itportal.com/v4/app/documents/$($doc.documentid)?ClientID=0"
+    if ($article) {
+        $ArticleMatches["DOCCSV_$($doc.documentId)"] = $article
         $contents = $ArticleRequest.Content
-        $contents = Rewrite-ItPortalDownloadNoteFileLinks -Html $contents -BaseUrl "https://$ITPhostname" -Client $client -TempDir 'c:\docs-tmp' -Cache $cache -UploadableId $article.id
+        if ($true -eq $useLocalFilesystemFiles) {
+            $contents = Rewrite-ItPortalLocalNoteFileLinks -Html $contents -LocalRoot $ITPDownloads -Cache $cache -UploadableId $article.id
+        } else {
+            $client = New-ITPHttpClientFromBrowserDump -CookieJson $CookieJSON -ITPhostname $ITPhostname -userId $ITPuserId -PortalOriginUrl "https://$ITPortalSubdomain.itportal.com/v4/app/documents/$($doc.documentid)?ClientID=0"
+            $contents = Rewrite-ItPortalDownloadNoteFileLinks -Html $contents -BaseUrl "https://$ITPhostname" -Client $client -TempDir $DocConversionTempDir -Cache $cache -UploadableId $article.id
+        }
         $article = set-huduarticle -id $article.id -content $contents
         $article = $article.article ?? $article
         $ArticleMatches["DOCCSV_$($doc.documentId)"] = $article 
