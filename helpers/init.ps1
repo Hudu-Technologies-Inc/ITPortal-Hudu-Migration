@@ -73,7 +73,9 @@ function Set-HuduModuleInitialized {
                 Join-Path (
                     $(if ($PSScriptRoot) { $PSScriptRoot } else { (Resolve-Path .).Path })
                 ) 'HAPI.zip'
-            )
+            ),
+            [string]$huduBaseURL,
+            [string]$huduAPIKey
         )
     $AllowHuduGalleryFallback = $false
  
@@ -350,7 +352,7 @@ function Set-HuduModuleInitialized {
     }
  
     #Login to Hudu
-    Set-HuduInstance
+    Set-HuduInstance -hudubaseurl $huduBaseurl -huduapikey $huduApikey
  
     # Check we have the correct version
     $CurrentVersion = [version]($(Get-HuduAppInfo).version)

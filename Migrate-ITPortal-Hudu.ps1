@@ -17,8 +17,7 @@ $jobs = @(
 "Fetch-Docs",
 "Create-Articles-FromRecords",
 "Create-Articles-FromFiles",
-"Set-Relations",
-"Wrap-Up"
+"Set-Relations"
 )
 
 $exportLocation = $exportLocation ?? (Read-Host "please enter the full path to your export.")
@@ -36,7 +35,7 @@ $ITPortalData =  @{}
 $MigrationErrors = @()
 
 foreach ($f in $(Get-ChildItem "$project_workdir\helpers" -Filter *.ps1)) {. $f.FullName}
- Get-PSVersionCompatible; Set-HuduModuleInitialized;
+ Get-PSVersionCompatible; Set-HuduModuleInitialized -hudubaseurl $huduBaseurl -huduapikey $huduAPIkey;
  Get-EnsuredPath $debugDir | Out-Null
  $internalCompany = Get-OrSetInternalCompany -internalCompanyName $internalCompanyName
 

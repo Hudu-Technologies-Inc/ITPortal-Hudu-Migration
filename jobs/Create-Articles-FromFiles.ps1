@@ -3,7 +3,14 @@ $sofficePath = Get-LibreMSI -TmpFolder $DocConversionTempDir
 $internalCompany = Get-OrSetInternalCompany -internalCompanyName $internalCompanyName
 $ArticleMatches = $articleMatches ?? @{}
 
-foreach ($doc in $(get-childitem -path "$ITPDownloads\Documents" -file -recurse)) {
+$filesList = $null
+if if ($true -ne $useLocalFilesystemFiles){
+$filesList= @($(get-childitem -path "$ITPDownloads\Documents" -file -recurse)) + @($($(get-childitem -path "$ITPDownloads\KBs" -file -recurse)))
+} else {
+$filesList= @($(get-childitem -path "$ITPDownloads\Documents" -file -recurse))
+}
+
+foreach ($doc in $filesList) {
     $uuid = [guid]::NewGuid().ToString()
     $record = $null; $company = $null;
     $dest = Join-Path $DocConversionTempDir ("doc-" + $uuid)

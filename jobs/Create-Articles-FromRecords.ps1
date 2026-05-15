@@ -3,9 +3,10 @@ $DocConversionTempDir = $tmpDir ?? "c:\docs-tmp"
 
 $ArticleMatches = $articleMatches ?? @{}
 
-$internalCompany = Get-OrSetInternalCompany -internalCompanyName $internalCompanyName
-$cookieJson = Get-ProperCookieJson -project_workdir $project_workdir -neededFor "Fetching/Downloading Images from ITPortal Documents included in csv export"
-
+if if ($true -ne $useLocalFilesystemFiles){
+    $internalCompany = Get-OrSetInternalCompany -internalCompanyName $internalCompanyName
+    $cookieJson = Get-ProperCookieJson -project_workdir $project_workdir -neededFor "Fetching/Downloading Images from ITPortal Documents included in csv export"
+}
 # step 2 - from knowledge base entries in CDSV, create hudu articles
 foreach ($doc in $itportaldata.KBs.CsvData) {
     $MatchedKB = $null; $company = $null; $article = $null;
@@ -34,7 +35,7 @@ foreach ($doc in $itportaldata.KBs.CsvData) {
     }
     $article = $article.article ?? $article
     write-host " Created/Updated KB Article from CSV kb contents. $($article.name)" -ForegroundColor Green
-    if ($null -ne $article) {
+    if ($article -and ($true -ne $useLocalFilesystemFiles)) { 
         $ArticleMatches["KBID_$($doc.KBID)"] = $article
         $client = New-ITPHttpClientFromBrowserDump -CookieJson $CookieJSON -ITPhostname $ITPhostname -userId $ITPuserId -PortalOriginUrl "https://$ITPortalSubdomain.itportal.com/v4/app/kb/$($doc.kbid)?ClientID=0"
         $contents = $ArticleRequest.Content
@@ -73,7 +74,7 @@ foreach ($doc in $itportaldata.documents.CsvData | where-object {-not ([string]:
     }
     $article = $article.article ?? $article
     write-host " Created/Updated KB Article from CSV doc contents. $($article.name)" -ForegroundColor Green
-    if ($article) { 
+    if ($article -and ($true -ne $useLocalFilesystemFiles)) { 
         $client = New-ITPHttpClientFromBrowserDump -CookieJson $CookieJSON -ITPhostname $ITPhostname -userId $ITPuserId -PortalOriginUrl "https://$ITPortalSubdomain.itportal.com/v4/app/documents/$($doc.documentid)?ClientID=0"
         $contents = $ArticleRequest.Content
         $contents = Rewrite-ItPortalDownloadNoteFileLinks -Html $contents -BaseUrl "https://$ITPhostname" -Client $client -TempDir 'c:\docs-tmp' -Cache $cache -UploadableId $article.id
