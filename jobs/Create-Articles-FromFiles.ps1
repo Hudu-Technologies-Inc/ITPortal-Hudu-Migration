@@ -50,6 +50,7 @@ foreach ($item in $filesList) {
     $articleParams = @{
         ResourceLocation = (Get-Item -LiteralPath $copied)
         IncludeOriginals = $true
+        DocConversionTempDir = $DocConversionTempDir
         updateOnMatch = $true
     }
 
@@ -64,9 +65,18 @@ foreach ($item in $filesList) {
     }
 
     $article = New-HuduArticleFromLocalResource @articleParams
-    if ($null -ne $article.result){
-        $ArticleMatches["DocumentFile_$($doc.name)"] = $article.result
-        write-host " Created article from file. $($article.result.name)" -ForegroundColor Green
+    $articleResult = $article.Result ?? $article.NewDoc ?? $article.ArticleResult?.HuduArticle
+    $articleKey = "$($item.ItemType)_$($record.DocumentID ?? $record.KBID ?? $doc.BaseName)_$($doc.name)"
+
+    if ($null -ne $articleResult){
+        $ArticleMatches[$articleKey] = $article
+        write-host " Created/updated article from file. $($articleResult.name)" -ForegroundColor Green
+    } elseif (-not [string]::IsNullOrWhiteSpace($article.Error)) {
+        $ArticleMatches[$articleKey] = $article
+        Write-Warning "Failed to create article from file $($doc.FullName): $($article.Error)"
+    } else {
+        $ArticleMatches[$articleKey] = $article
+        Write-Host " Skipped article from file $($doc.FullName): $($article.Action ?? $article.Strategy)" -ForegroundColor Yellow
     }
 }        
 
