@@ -2,6 +2,7 @@ $DocConversionTempDir = $tmpDir ?? "c:\docs-tmp"
 $sofficePath = Get-LibreMSI -TmpFolder $DocConversionTempDir
 $internalCompany = Get-OrSetInternalCompany -internalCompanyName $internalCompanyName
 $ArticleMatches = $articleMatches ?? @{}
+$MaxConvertedHtmlCharacters = $MaxConvertedHtmlCharacters ?? 90000
 
 $filesList = @()
 if ($true -ne $useLocalFilesystemFiles){
@@ -51,7 +52,9 @@ foreach ($item in $filesList) {
         ResourceLocation = (Get-Item -LiteralPath $copied)
         IncludeOriginals = $true
         DocConversionTempDir = $DocConversionTempDir
+        MaxHtmlCharacters = $MaxConvertedHtmlCharacters
         updateOnMatch = $true
+        UpdateStrategy = 'filehash'
     }
 
     if ($null -ne $record){
