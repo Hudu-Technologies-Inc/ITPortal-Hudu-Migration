@@ -16,8 +16,9 @@ $jobs = @(
 # "Submit-Passwords",
 # "Fetch-Docs",
 # "Create-Articles-FromRecords",
-"Create-Articles-FromFiles"
-# "Set-Relations"
+"Create-Articles-FromFiles",
+"Set-Relations",
+"Wrap-Up"
 )
 
     $exportLocation = $exportLocation ?? (Read-Host "please enter the full path to your export.")
