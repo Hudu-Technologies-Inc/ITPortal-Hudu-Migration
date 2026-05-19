@@ -12,10 +12,10 @@ $ITPortalMigrationStarted = $ITPortalMigrationStarted ?? (Get-Date)
 
 $jobs = @(
 "Read-Data",
-# "Assets-and-Layouts",
-# "Submit-Passwords",
-# "Fetch-Docs",
-# "Create-Articles-FromRecords",
+"Assets-and-Layouts",
+"Submit-Passwords",
+"Fetch-Docs",
+"Create-Articles-FromRecords",
 "Create-Articles-FromFiles",
 "Set-Relations",
 "Wrap-Up"
