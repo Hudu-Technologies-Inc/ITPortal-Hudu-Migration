@@ -167,7 +167,7 @@ foreach ($key in $orderedKeys | where-object {$_ -notin $SkipTables -and $_ -not
     Write-Host "Loaded $key with $($csvRows.Count) CSV rows; discerning types with resolution $rowLimit"
 
     $layoutRequest = @{
-         Name   = $key; Fields = @();
+         Name   = "$ITPPrefix$key"; Fields = @();
          icon="fas fa-person"; color="#6136ff"; icon_color="#ffffff"; include_passwords=$true; include_photos=$true; include_comments=$true; include_files=$true;
     }
 
@@ -245,7 +245,7 @@ foreach ($key in $orderedKeys | where-object {$_ -notin $SkipTables -and $_ -not
         }
     }
 
-    $AL = get-huduassetlayouts -name $key | select-object -first 1; $al = $AL.asset_layout ?? $AL;
+    $AL = get-huduassetlayouts -name "$ITPPrefix$key" | select-object -first 1; $al = $AL.asset_layout ?? $AL;
     if ($al) {
         Write-Host "Asset Layout '$($al.name)' (ID: $($al.id)) already exists; using existing layout." -ForegroundColor Yellow
     } else {
@@ -267,12 +267,14 @@ foreach ($key in $orderedKeys | where-object {$_ -notin $SkipTables -and $_ -not
     foreach ($row in $csvRows) {
         $huduCompaniesRef = [ref]$huduCompanies
         $company = Ensure-HuduCompany -Row $row -InternalCompanyName $internalcompanyName -CompanyMap $CompanyMap -HuduCompanies $huduCompaniesRef
-
+        $GivenName = $null
         if ($NameFields.ContainsKey($key)){
             $GivenName = $row.$($NameFields[$key]) ?? $row.PSObject.Properties[0].Value ?? "Unnamed $key Asset $($($([Guid]::NewGuid().ToString()) -split "-")[0])"
         } else {
-        
             $GivenName = $row.name ?? $row.PSObject.Properties[0].Value ?? "Unnamed $key $($($([Guid]::NewGuid().ToString()) -split "-")[0])"
+        }
+        if ([string]::isnullorempty($givenName)){
+            $GivenName = "Un-Named-$key-$(get-random -minimum 1999 -maximum 9999)"
         }
 
         if (-not $company -or -not $company.id -or $company.id -le 0){

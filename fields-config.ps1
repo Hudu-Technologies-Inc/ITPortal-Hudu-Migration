@@ -182,6 +182,7 @@ $discernment = 4096
 
 # these are the final label names that will be applied after everything is moved.
 $LabelMappings = @{}
+$ITPPrefix = $ITPPrefix ?? ""
 $labelMappings["deviceType"]="Device Type"
 $labelMappings["EmailExpire"]="Email Expiry"
 $labelMappings["IPAddresses"]="IP Addresses"

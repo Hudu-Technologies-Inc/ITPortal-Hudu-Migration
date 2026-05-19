@@ -13,7 +13,11 @@ Seamlessly migrate data, documents, and knowledge from ITPortal into Hudu.
 - ITPortal CSV Export
 - PowerShell 7.5.1+ on Windows Machine
 - LibreOffice
+(if self-hosted)
+- Access to Filesystem or Filesystem Backup [accounts, agreements, clients, kb folder etc]
+(if cloud-hosted)
 - Cookie Manager Browser Extension
+
 
 * **installer for newest release of LibreOffice will be launched if you don't have this yet**
 
@@ -27,11 +31,28 @@ notepad my-environment.ps1
 
 ```
 $exportLocation = "X:\yourITPexport"            # this is where you've unzipped your itportal export
-$tmpDir="X:\itp\tmp"                            # designated temporary base directory for converting potentially sensitive files
+$tmpDir="X:\itp\tmp"                            # designated temporary 
+$ITPPrefix="ITP-" # prefix for incoming layout names
+base directory for converting potentially sensitive files
 $hudubaseurl = "yourcompany.huducloud.com"      # your hudu instance url
 $huduapikey="hudukeyvaluehere"                  # your hudu api key
+...
+```
 
-$ITPDownloads = "x:\yourITPortalDocsLocation"   # this is the path that we'll use for downloading documents and kb images
+If you are self-hosted, you'll place a copy of your content directories in your ITportal Docs Location and Set `$useLocalFilesystemFiles=$true`. We've seen this path exist at c:\ITPortalFiles\ITPortalUser in the past.
+
+```
+$useLocalFilesystemFiles = $true
+$ITPDownloads = "x:\yourITPortalDocsLocation"   # this is the path that we'll use for searching for your current kb images and other docs
+```
+
+If you are cloud-hosted, you'll want to make sure this is set to false and instead points to a directory where you'll download these files
+
+```
+$useLocalFilesystemFiles = $false
+$ITPDownloads = "x:\yourITPortalDocsLocation"   # this is the path that we'll use for downloading kb images and other docs
+```
+
 
 $internalCompanyName = "OurCo Internal"         # this is the name of your internal company as seen in Hudu
 
