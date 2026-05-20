@@ -41,4 +41,6 @@ while (-not $ready){
     }
 }
 write-host "refreshed final user-defined field name changes now!"; start-sleep -Seconds 3;
+
+
 Rename-HuduLayoutFieldsBulk -LabelMappings $labelMappings -layouts $(if ($null -ne $ITPortalMigrationStarted) {$(Get-HuduAssetLayouts -updatedafter $ITPortalMigrationStarted.AddMinutes(-45))} else {$(Get-HuduAssetLayouts)})

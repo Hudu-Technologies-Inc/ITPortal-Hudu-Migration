@@ -2,10 +2,46 @@ $DocConversionTempDir = $tmpDir ?? "c:\docs-tmp"
 $sofficePath = Get-LibreMSI -TmpFolder $DocConversionTempDir
 $internalCompany = Get-OrSetInternalCompany -internalCompanyName $internalCompanyName
 $ArticleMatches = $articleMatches ?? @{}
+$MaxConvertedHtmlCharacters = $MaxConvertedHtmlCharacters ?? 90000
 
-foreach ($doc in $(get-childitem -path "$ITPDownloads\Documents" -file -recurse)) {
+$filesList = @()
+if ($true -ne $useLocalFilesystemFiles){
+    $fileItems = @($(get-childitem -path "$ITPDownloads\Documents" -file -recurse -ErrorAction SilentlyContinue)) + @($(get-childitem -path "$ITPDownloads\KBs" -file -recurse -ErrorAction SilentlyContinue))
+    foreach ($file in $fileItems) {
+        $record = $itportaldata.Documents.CsvData | Where-Object {$_.filename -ieq "$($file.name)"} | Select-Object -First 1
+        $itemType = 'Document'
+        if (-not $record) {
+            $record = $itportaldata.KBs.CsvData | Where-Object {$_.filename -ieq "$($file.name)"} | Select-Object -First 1
+            $itemType = 'KB'
+        }
+        $filesList += [pscustomobject]@{ File = $file; Record = $record; ItemType = $itemType }
+    }
+} else {
+    if (-not (Test-Path -LiteralPath $ITPDownloads)) {
+        throw "Local ITPortal filesystem path does not exist: $ITPDownloads"
+    }
+
+    $seenFiles = @{}
+    foreach ($record in @($itportaldata.Documents.CsvData)) {
+        foreach ($file in @(Get-ItPortalLocalRecordFiles -CsvRow $record -LocalRoot $ITPDownloads -ItemType Document)) {
+            if ($seenFiles.ContainsKey($file.FullName)) { continue }
+            $seenFiles[$file.FullName] = $true
+            $filesList += [pscustomobject]@{ File = $file; Record = $record; ItemType = 'Document' }
+        }
+    }
+    foreach ($record in @($itportaldata.KBs.CsvData)) {
+        foreach ($file in @(Get-ItPortalLocalRecordFiles -CsvRow $record -LocalRoot $ITPDownloads -ItemType KB)) {
+            if ($seenFiles.ContainsKey($file.FullName)) { continue }
+            $seenFiles[$file.FullName] = $true
+            $filesList += [pscustomobject]@{ File = $file; Record = $record; ItemType = 'KB' }
+        }
+    }
+}
+
+foreach ($item in $filesList) {
+    $doc = $item.File
     $uuid = [guid]::NewGuid().ToString()
-    $record = $null; $company = $null;
+    $record = $item.Record; $company = $null;
     $dest = Join-Path $DocConversionTempDir ("doc-" + $uuid)
     Get-EnsuredPath -Path $dest | Out-Null
 
@@ -15,10 +51,12 @@ foreach ($doc in $(get-childitem -path "$ITPDownloads\Documents" -file -recurse)
     $articleParams = @{
         ResourceLocation = (Get-Item -LiteralPath $copied)
         IncludeOriginals = $true
+        DocConversionTempDir = $DocConversionTempDir
+        MaxHtmlCharacters = $MaxConvertedHtmlCharacters
         updateOnMatch = $true
+        UpdateStrategy = 'filehash'
     }
 
-    $record = $itportaldata.Documents.CsvData | Where-Object {$_.filename -ieq "$($doc.name)"} | Select-Object -First 1
     if ($null -ne $record){
         $company = $(Get-HuduCompanies -Name $record.company | select-object -first 1); $company = $company.company ?? $company;
         if ($null -ne $company -and $company.id -ge 1){
@@ -30,9 +68,18 @@ foreach ($doc in $(get-childitem -path "$ITPDownloads\Documents" -file -recurse)
     }
 
     $article = New-HuduArticleFromLocalResource @articleParams
-    if ($null -ne $article.result){
-        $ArticleMatches["DocumentFile_$($doc.name)"] = $article.result
-        write-host " Created article from file. $($article.result.name)" -ForegroundColor Green
+    $articleResult = $article.Result ?? $article.NewDoc ?? $article.ArticleResult?.HuduArticle
+    $articleKey = "$($item.ItemType)_$($record.DocumentID ?? $record.KBID ?? $doc.BaseName)_$($doc.name)"
+
+    if ($null -ne $articleResult){
+        $ArticleMatches[$articleKey] = $article
+        write-host " Created/updated article from file. $($articleResult.name)" -ForegroundColor Green
+    } elseif (-not [string]::IsNullOrWhiteSpace($article.Error)) {
+        $ArticleMatches[$articleKey] = $article
+        Write-Warning "Failed to create article from file $($doc.FullName): $($article.Error)"
+    } else {
+        $ArticleMatches[$articleKey] = $article
+        Write-Host " Skipped article from file $($doc.FullName): $($article.Action ?? $article.Strategy)" -ForegroundColor Yellow
     }
 }        
 

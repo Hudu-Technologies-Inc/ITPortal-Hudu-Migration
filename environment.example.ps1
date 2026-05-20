@@ -9,7 +9,7 @@ $internalCompanyName = "OurCo Internal"         # this is the name of your inter
 
 $ITPortalSubdomain = "YourCompany"              # this is the subdomain of your itportal instance
 $ITPhostname="$ITPortalSubdomain.itportal.com"  # this is the full hostname of your itportal instance
-
+$useLocalFilesystemFiles = $false # only set to true if you are self-hosted with no web-access. If true you do NOT need to set cookiejar file.
 
 # $CookieJson = $(get-content -Raw -Path ".\cookiejar.json" | ConvertFrom-Json -depth -99)
 

@@ -175,8 +175,8 @@ function Get-HuduUrlForItPortalUpload {
     # attach upload to article if requested
     $uploadParams = @{ FilePath = $filePath }
     if ($UploadableId) {
-        $uploadParams.recordType = $UploadableType
-        $uploadParams.recordID   = $UploadableId
+        $uploadParams.uploadable_type = $UploadableType
+        $uploadParams.uploadable_id   = $UploadableId
     }
 
     $huduUpload = New-HuduUpload @uploadParams
@@ -185,6 +185,171 @@ function Get-HuduUrlForItPortalUpload {
 
     $Cache[$cacheKey] = $url
     return $url
+}
+
+function Get-ItPortalLocalRecordFile {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][pscustomobject]$CsvRow,
+        [Parameter(Mandatory)][string]$LocalRoot,
+        [Parameter(Mandatory)][ValidateSet('Document','KB', IgnoreCase=$true)][string]$ItemType
+    )
+
+    $folderName = if ($ItemType -ieq 'KB') { 'KBs' } else { 'Documents' }
+    $idProperty = if ($ItemType -ieq 'KB') { 'KBID' } else { 'DocumentID' }
+    $itemId = [string]$CsvRow.$idProperty
+
+    if ([string]::IsNullOrWhiteSpace($itemId)) { return $null }
+
+    $itemRoot = Join-Path (Join-Path $LocalRoot $folderName) $itemId
+    if (-not (Test-Path -LiteralPath $itemRoot)) { return $null }
+
+    $files = @(Get-ItPortalLocalRecordFiles -CsvRow $CsvRow -LocalRoot $LocalRoot -ItemType $ItemType)
+
+    if ($files.Count -eq 0) { return $null }
+
+    $fileName = [string]$CsvRow.FileName
+    if (-not [string]::IsNullOrWhiteSpace($fileName)) {
+        $match = $files | Where-Object { $_.Name -ieq $fileName } | Select-Object -First 1
+        if ($match) { return $match }
+
+        $match = $files | Where-Object { $_.Name -like "*$fileName*" } | Select-Object -First 1
+        if ($match) { return $match }
+    }
+
+    return ($files | Sort-Object FullName | Select-Object -First 1)
+}
+
+function Get-ItPortalLocalRecordFiles {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][pscustomobject]$CsvRow,
+        [Parameter(Mandatory)][string]$LocalRoot,
+        [Parameter(Mandatory)][ValidateSet('Document','KB', IgnoreCase=$true)][string]$ItemType
+    )
+
+    $folderName = if ($ItemType -ieq 'KB') { 'KBs' } else { 'Documents' }
+    $idProperty = if ($ItemType -ieq 'KB') { 'KBID' } else { 'DocumentID' }
+    $itemId = [string]$CsvRow.$idProperty
+
+    if ([string]::IsNullOrWhiteSpace($itemId)) { return @() }
+
+    $itemRoot = Join-Path (Join-Path $LocalRoot $folderName) $itemId
+    if (-not (Test-Path -LiteralPath $itemRoot)) { return @() }
+
+    $files = @(Get-ChildItem -LiteralPath $itemRoot -File -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -notmatch '(?i)[\\/]+Notes[\\/]' })
+
+    $fileName = [string]$CsvRow.FileName
+    if (-not [string]::IsNullOrWhiteSpace($fileName)) {
+        $matched = @($files | Where-Object { $_.Name -ieq $fileName })
+        if ($matched.Count -gt 0) { return $matched }
+    }
+
+    return @($files | Sort-Object FullName)
+}
+
+function Get-ItPortalLocalNoteFile {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$RelativeUrl,
+        [Parameter(Mandatory)][string]$LocalRoot
+    )
+
+    $rel = ($RelativeUrl -replace '&amp;', '&').Trim()
+    $query = [regex]::Match($rel, '\?(?<query>.*)$').Groups['query'].Value
+    if ([string]::IsNullOrWhiteSpace($query)) { return $null }
+
+    $parts = @{}
+    foreach ($pair in ($query -split '&')) {
+        if ([string]::IsNullOrWhiteSpace($pair)) { continue }
+        $kv = $pair -split '=', 2
+        if ($kv.Count -eq 2) {
+            $parts[[System.Uri]::UnescapeDataString($kv[0])] = [System.Uri]::UnescapeDataString($kv[1])
+        }
+    }
+
+    $uploadId = [string]$parts.UploadID
+    $itemId = [string]$parts.ItemID
+    $itemType = [string]$parts.ItemType
+    if ([string]::IsNullOrWhiteSpace($uploadId) -or [string]::IsNullOrWhiteSpace($itemId)) { return $null }
+
+    $folderName = if ($itemType -ieq 'KB') { 'KBs' } else { 'Documents' }
+    $uploadRoot = Join-Path (Join-Path (Join-Path (Join-Path $LocalRoot $folderName) $itemId) 'Notes') $uploadId
+    if (-not (Test-Path -LiteralPath $uploadRoot)) { return $null }
+
+    return (Get-ChildItem -LiteralPath $uploadRoot -File -ErrorAction SilentlyContinue |
+        Sort-Object FullName |
+        Select-Object -First 1)
+}
+
+function Get-HuduUrlForItPortalLocalUpload {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$RelativeUrl,
+        [Parameter(Mandatory)][string]$LocalRoot,
+        [Parameter()][hashtable]$Cache,
+
+        [Parameter()][int]$UploadableId,
+        [Parameter()][ValidateSet('Article','Asset','Company', IgnoreCase=$true)]
+        [string]$UploadableType = 'Article'
+    )
+
+    if (-not $Cache) { $Cache = @{} }
+
+    $cacheKey = "local|$RelativeUrl|$UploadableType|$UploadableId"
+    if ($Cache.ContainsKey($cacheKey)) { return $Cache[$cacheKey] }
+
+    $file = Get-ItPortalLocalNoteFile -RelativeUrl $RelativeUrl -LocalRoot $LocalRoot
+    if (-not $file) {
+        Write-Warning "Could not find local ITPortal note upload for $RelativeUrl"
+        $Cache[$cacheKey] = $null
+        return $null
+    }
+
+    $uploadParams = @{ FilePath = $file.FullName }
+    if ($UploadableId) {
+        $uploadParams.uploadable_type = $UploadableType
+        $uploadParams.uploadable_id = $UploadableId
+    }
+
+    $huduUpload = New-HuduUpload @uploadParams
+    $huduUpload = $huduUpload.upload ?? $huduUpload
+    $url = $huduUpload.url
+
+    $Cache[$cacheKey] = $url
+    return $url
+}
+
+function Rewrite-ItPortalLocalNoteFileLinks {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Html,
+        [Parameter(Mandatory)][string]$LocalRoot,
+        [Parameter()][hashtable]$Cache,
+
+        [Parameter()][int]$UploadableId,
+        [Parameter()][ValidateSet('Article','Asset','Company', IgnoreCase=$true)]
+        [string]$UploadableType = 'Article'
+    )
+
+    if (-not $Cache) { $Cache = @{} }
+
+    $rx = [regex]'(?i)/portal3/ajax-updates/?\?rID=DownloadNoteFile(?:[&]|&amp;)[^"''\s>]+'
+
+    $rx.Replace($Html, {
+        param($m)
+        $relDecoded = $m.Value -replace '&amp;', '&'
+
+        $newUrl = Get-HuduUrlForItPortalLocalUpload `
+            -RelativeUrl $relDecoded `
+            -LocalRoot $LocalRoot `
+            -Cache $Cache `
+            -UploadableId $UploadableId `
+            -UploadableType $UploadableType
+
+        if ([string]::IsNullOrWhiteSpace($newUrl)) { $m.Value } else { $newUrl }
+    })
 }
 
 function Rewrite-ItPortalDownloadNoteFileLinks {
@@ -203,7 +368,7 @@ function Rewrite-ItPortalDownloadNoteFileLinks {
 
     if (-not $Cache) { $Cache = @{} }
 
-    $rx = [regex]'(?i)/portal3/ajax-updates/\?rID=DownloadNoteFile(?:[&]|&amp;)[^"\s>]+'
+    $rx = [regex]'(?i)/portal3/ajax-updates/?\?rID=DownloadNoteFile(?:[&]|&amp;)[^"''\s>]+'
 
     $rx.Replace($Html, {
         param($m)

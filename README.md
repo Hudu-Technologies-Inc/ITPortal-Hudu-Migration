@@ -13,7 +13,8 @@ Seamlessly migrate data, documents, and knowledge from ITPortal into Hudu.
 - ITPortal CSV Export
 - PowerShell 7.5.1+ on Windows Machine
 - LibreOffice
-- Cookie Manager Browser Extension
+- (if self-hosted) Access to Filesystem or Filesystem Backup [accounts, agreements, clients, kb folder etc]
+- (if cloud-hosted) Cookie Manager Browser Extension
 
 * **installer for newest release of LibreOffice will be launched if you don't have this yet**
 
@@ -27,16 +28,28 @@ notepad my-environment.ps1
 
 ```
 $exportLocation = "X:\yourITPexport"            # this is where you've unzipped your itportal export
-$tmpDir="X:\itp\tmp"                            # designated temporary base directory for converting potentially sensitive files
+$tmpDir="X:\itp\tmp"                            # designated temporary folder
+$ITPPrefix="ITP-"                               # prefix for incoming layout names
 $hudubaseurl = "yourcompany.huducloud.com"      # your hudu instance url
 $huduapikey="hudukeyvaluehere"                  # your hudu api key
-
-$ITPDownloads = "x:\yourITPortalDocsLocation"   # this is the path that we'll use for downloading documents and kb images
-
 $internalCompanyName = "OurCo Internal"         # this is the name of your internal company as seen in Hudu
-
 $ITPortalSubdomain = "YourCompany"              # this is the subdomain of your itportal instance
 $ITPhostname="$ITPortalSubdomain.itportal.com"  # this is the full hostname of your itportal instance
+...
+```
+
+If you are self-hosted, you'll place a copy of your content directories in your ITportal Docs Location and Set `$useLocalFilesystemFiles=$true`. We've seen this path exist at c:\ITPortalFiles\ITPortalUser in the past.
+
+```
+$useLocalFilesystemFiles = $true
+$ITPDownloads = "x:\yourITPortalDocsLocation"   # this is the path that we'll use for searching for your current kb images and other docs
+```
+
+If you are cloud-hosted, you'll want to make sure this is set to false and instead points to a directory where you'll download these files
+
+```
+$useLocalFilesystemFiles = $false
+$ITPDownloads = "x:\yourITPortalDocsLocation"   # this is the path that we'll use for downloading kb images and other docs
 ```
 
 And then you can kick it off by opening `pwsh7` session as `administrator`, and `dot-sourcing` your `environment file`, as in the below example-
@@ -71,30 +84,43 @@ gets initial information about your Hudu instance, whether or not your internal 
 
 ---
 
-### 2. **Assets-And-Layouts** Task
+### 2. **Assets-Companies-And-Layouts** Task
 `Accounts`, `ConfigItems`, `Agreements`, `Devices`, `Contacts`, and `Sites` get moved over during the `Assets-And-Layouts` Job as Assets in Hudu. `Companies` are created during this job as well. 
 When this job finishes, all created assets can be found in a folder in the project directory, named `Debug`. The assets dump file is named `CreatedAssets.json`
 
 <img width="1882" height="922" alt="image" src="https://github.com/user-attachments/assets/a2d55579-e9bf-427d-aff8-6b90413c6dc1" />
 
-This job is the heart of the migration and does take a while, sometimes several hours for a larger migration.
+This job is the heart of the migration and does take a while, sometimes several hours for a larger migration. It is safe to run as many times as needed as long as you haven't completed wrap-up tasks (field renaming)
  
  ---
  
 ### 3. **Fetch-Docs** Task
-Fetch-Docs job requires a fresh `CookieJar.Json` file for downloading the source document files. You only need to refresh this file (see section below) a few times, but it is important to keep this file current when asked, especially for larger migrations.
-
-<img width="1876" height="208" alt="image" src="https://github.com/user-attachments/assets/6c8f76c7-fab1-41f4-99ec-008bbe56e319" />
 
 Sometimes the `KB` or `Document` Record that we reference from CSV doesnt include a `Filename` attribute, so we rely on some basic file parsing to identify filetype by encoding, file header, and magic bytes. *Downloaded files* are recored in `Debug` folder in a file named `Articles-Fetched.json`
 
 <img width="1908" height="554" alt="image" src="https://github.com/user-attachments/assets/ef5bc50f-2545-4b9e-9d2e-acdbba7db674" />
 
+#### If ITP is self-hosted:
+
+make sure you set $ITPDownloads env variable to point to your ITportal Filesystem Directory
+This folder that you want to point to typically contains these directories:
+
+<img width="220" height="174" alt="image" src="https://github.com/user-attachments/assets/deab93a9-1ef0-4007-b4aa-d870bfdbd825" />
+
+If you are self-hosted and have access to the pictured directories, you can ignore the cookiejar stuff, below.
+
+#### If ITP is cloud-hosted:
+
+Fetch-Docs job requires a fresh `CookieJar.Json` file for downloading the source document files. You only need to refresh this file (see section below) a few times, but it is important to keep this file current when asked, especially for larger migrations.
+
+<img width="1876" height="208" alt="image" src="https://github.com/user-attachments/assets/6c8f76c7-fab1-41f4-99ec-008bbe56e319" />
+
 ---
 
 ### 4. **Create-Articles-FromFiles** Task
-`Documents` are downloaded programmatically and converted/added to Hudu as Articles during the `Create-Articles-FromFiles` Job.
-When this job finishes, all *Articles from Files* can be found in a folder in the project directory, named `Debug`. The assets dump file is named `Articles-FromFiles.json`.
+
+This part is safe to run as many times as needed and won't cause unwanted duplicates.
+Remote Article attachments are compared with filehash and article contents are compared with local content hash.
 
 This part is pretty simple. We use ***LibreOffice*** and the proven 'Articles-Anywhere' client library to convert any files that we were able to grab from ITPortal. This includes images, all manor of text documents, pdf's, presentations, and spreadsheets.
 
@@ -102,14 +128,33 @@ This part is pretty simple. We use ***LibreOffice*** and the proven 'Articles-An
 
 There are **very few filetypes** that can't be handled this way, but if we encounter such a condition, we simply upload the file in-place and attach it to a reference article for easy searching and relating.
 
+#### If ITP is self-hosted:
+
+If you are self-hosted and have access to your ITportal Filesystem Directory specified in your $ITPDownloads var, there is no need to download, but we will enumerate documents and place them as if we had downloaded them.
+
+#### If ITP is cloud-hosted:
+
+`Documents` are downloaded programmatically and converted/added to Hudu as Articles during the `Create-Articles-FromFiles` Job.
+When this job finishes, all *Articles from Files* can be found in a folder in the project directory, named `Debug`. The assets dump file is named `Articles-FromFiles.json`.
+
 ---
 
 ### 5. **Create-Articles-FromRecords** Task
+
+Like the documents from-files task, this part is safe to run as many times as needed and won't cause unwanted duplicates.
+Remote Article attachments are compared with filehash and article contents are compared with local content hash.
+
+When this job finishes, all *Articles from CSV* can be found in a folder in the project directory, named `Debug`. The assets dump file is named `Articles-FromRecords.json`. These are organized by *whether they started as a `kb` object or an embedded `document` object*.
+
+#### If ITP is self-hosted:
+
+Then we peruze the document folders for the documents/kb's mentioned in the CSV files relative to your ITportal Filesystem Directory specified in your $ITPDownloads var
+
+#### If ITP is cloud-hosted:
+
 `KBs` And `Documents` get created as `Articles` in Hudu from your CSV export During `Create-Articles-FromRecords` Job. This Job requires that you have a fresh `CookieJar.Json` File in order to download images in these articles.
 
 <img width="1884" height="502" alt="image" src="https://github.com/user-attachments/assets/929efb4c-51b8-4de3-b7cf-126c57fcd293" />
-
-When this job finishes, all *Articles from CSV* can be found in a folder in the project directory, named `Debug`. The assets dump file is named `Articles-FromRecords.json`. These are organized by *whether they started as a `kb` object or an embedded `document` object*.
 
 ---
 

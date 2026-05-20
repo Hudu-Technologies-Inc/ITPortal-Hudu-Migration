@@ -9,108 +9,7 @@ $rxCssUrl    = [Regex]::new('url\(\s*(["'']?)(?<u>[^)"'']+)\1\s*\)', [RegexOptio
 
 $huduapikey = $huduapikey ?? $(read-host "Please enter hudu api key")
 $hudubaseurl = $hudubaseurl ?? $(read-host "please enter hudu instance url")
-function Normalize-Text {
-    param([string]$s)
-    if ([string]::IsNullOrWhiteSpace($s)) { return $null }
-    $s = $s.Trim().ToLowerInvariant()
-    $s = [regex]::Replace($s, '[\s_-]+', ' ')  # "primary_email" -> "primary email"
-    # strip diacritics (prénom -> prenom)
-    $formD = $s.Normalize([System.Text.NormalizationForm]::FormD)
-    $sb = New-Object System.Text.StringBuilder
-    foreach ($ch in $formD.ToCharArray()){
-        if ([System.Globalization.CharUnicodeInfo]::GetUnicodeCategory($ch) -ne
-            [System.Globalization.UnicodeCategory]::NonSpacingMark) { [void]$sb.Append($ch) }
-    }
-    ($sb.ToString()).Normalize([System.Text.NormalizationForm]::FormC)
-}
-function Compare-StringsIgnoring {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)] [string]$A,
-        [Parameter(Mandatory)] [string]$B,
-        $ignore = @(
-                '\bthe\b',
-                '\borg\b',
-                '\binc\b',
-                '\bpc\b',
-                '\band\b',
-                '\bltd\b',
-                '[\.,/&]'
-            ))
-    function _Normalize($s) {
-        $t = $s.ToLowerInvariant()
-        foreach ($pattern in $ignore) {
-            $t = $t -replace $pattern, ''
-        }
-        $t = ($t -replace '\s+', ' ').Trim()
-        return $t
-    }
 
-    $normA = _Normalize $A
-    $normB = _Normalize $B
-
-    return ($normA -eq $normB)
-}
-
-function Test-Equiv {
-    param([string]$A, [string]$B)
-    $a = Normalize-Text $A; $b = Normalize-Text $B
-    if (-not $a -or -not $b) { return $false }
-    if ($a -eq $b) { return $true }
-    $reA = "(^| )$([regex]::Escape($a))( |$)"
-    $reB = "(^| )$([regex]::Escape($b))( |$)"
-    if ($b -match $reA -or $a -match $reB) { return $true } 
-    if ($a.Replace(' ', '') -eq $b.Replace(' ', '')) { return $true }
-    return $false
-}
-function Get-Similarity {
-    param([string]$A, [string]$B)
-
-    $a = [string](Normalize-Text $A)
-    $b = [string](Normalize-Text $B)
-    if ([string]::IsNullOrEmpty($a) -and [string]::IsNullOrEmpty($b)) { return 1.0 }
-    if ([string]::IsNullOrEmpty($a) -or  [string]::IsNullOrEmpty($b))  { return 0.0 }
-
-    $n = [int]$a.Length
-    $m = [int]$b.Length
-    if ($n -eq 0) { return [double]($m -eq 0) }
-    if ($m -eq 0) { return 0.0 }
-
-    $d = New-Object 'int[,]' ($n+1), ($m+1)
-    for ($i = 0; $i -le $n; $i++) { $d[$i,0] = $i }
-    for ($j = 0; $j -le $m; $j++) { $d[0,$j] = $j }
-
-    for ($i = 1; $i -le $n; $i++) {
-        $im1 = ([int]$i) - 1
-        $ai  = $a[$im1]
-        for ($j = 1; $j -le $m; $j++) {
-            $jm1 = ([int]$j) - 1
-            $cost = if ($ai -eq $b[$jm1]) { 0 } else { 1 }
-
-            $del = [int]$d[$i,  $j]   + 1
-            $ins = [int]$d[$i,  $jm1] + 1
-            $sub = [int]$d[$im1,$jm1] + $cost
-
-            $d[$i,$j] = [Math]::Min($del, [Math]::Min($ins, $sub))
-        }
-    }
-
-    $dist   = [double]$d[$n,$m]
-    $maxLen = [double][Math]::Max($n,$m)
-    return 1.0 - ($dist / $maxLen)
-}
-function Get-SimilaritySafe { param([string]$A,[string]$B)
-    if ([string]::IsNullOrWhiteSpace($A) -or [string]::IsNullOrWhiteSpace($B)) { return 0.0 }
-    $score = Get-Similarity $A $B
-    write-host "$a ... $b SCORED $score"
-    return $score
-}
-
-function ChoseBest-ByName {
-    param ([string]$Name,[array]$choices,[string]$prop='name')
-return $($choices | ForEach-Object {
-[pscustomobject]@{Choice = $_; Score  = $(Get-SimilaritySafe -a "$Name" -b $_.$prop);}} | where-object {$_.Score -ge 0.97} | Sort-Object Score -Descending | select-object -First 1).Choice
-}
 function Get-NormalizedTitle([string]$s) {
   if ([string]::IsNullOrWhiteSpace($s)) { return '' }
   ([System.Web.HttpUtility]::HtmlDecode($s) -replace '\s+', ' ').Trim().ToLowerInvariant()
@@ -204,9 +103,20 @@ function Set-HuduArticleFromHtml {
     [Parameter(Mandatory)][string]$Title,
     [Parameter(Mandatory)][string]$HtmlContents,
     [switch]$CreateCompanyIfMissing = $false,
+    [bool]$CalculateHashes = $true,
     [string]$HuduBaseUrl
   )
+    $null = Get-EnsuredPath -Path $DocConversionTempDir
 
+    if (-not $script:CurrentHuduVersion) {
+        $appInfo = Get-HuduAppInfo
+        $script:CurrentHuduVersion = [version]$appInfo.version
+    }
+
+    if (-not $script:DateCompareJitterHours) {
+        $script:DateCompareJitterHours = [timespan]::FromHours(12)
+    }
+      $embedInfo = @()
   # 1) Resolve company (optional)
   $matchedCompany = $null
   if ($CompanyName) {
@@ -254,19 +164,37 @@ function Set-HuduArticleFromHtml {
   $existingRelatedImages = Get-HuduUploads | Where-Object { $_.uploadable_type -eq 'Article' -and $_.uploadable_id -eq $articleUsed.Id }
 
   $ImagesArray = @($ImagesArray) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
-  write-host "Processing $($ImagesArray.Count) images for article '$Title'..."
+  Write-Verbose "Processing $($ImagesArray.Count) images for article '$Title'..."
   $HuduImages = @()
   foreach ($ImageFile in $ImagesArray) {
     if (-not (Test-Path -LiteralPath $ImageFile -PathType Leaf)) { continue }
-    $existingUpload = $null
-    $uploaded = $null
+    $existingUpload = $null; $uploaded = $null; $comparision = $null; $existingUploadModifiedDate = $null;
     $imageFileName = ([IO.Path]::GetFileName($ImageFile)).Trim()
+    $imageMetadata = Get-Item -LiteralPath $ImageFile -ErrorAction silentlycontinue
 
     $existingUpload = $existingRelatedImages | Where-Object { $_.name -eq $imageFileName } | Select-Object -First 1
     if (-not $existingUpload) {
       $existingUpload = $existingRelatedImages | Where-Object { Test-Equiv -A $_.name -B $imageFileName } | Select-Object -First 1
     }
     $existingUpload = $existingUpload.upload ?? $existingUpload
+    if ($null -ne $existingUpload -and $true -eq $CalculateHashes -and $existingUpload.id -gt 0) {
+      $comparison = Compare-UploadHashWithFile -UploadID $existingUpload.id -LocalFile $ImageFile
+      $existingUploadModifiedDate = ([datetime]::Parse(($existingUpload.created_date ?? $existingUpload.created_at))).ToUniversalTime()
+      if ($true -eq $comparison.SameFile) {
+        $embedInfo += "Existing embed '$($existingUpload.name)' with id $($existingUpload.id) matches file '$ImageFile' by hash. Reusing existing upload."; Write-Verbose $embedInfo[-1];
+      } else {
+        $embedInfo += "Local file hash: $($comparison.LocalHash) is not the same as remote file hash $($comparison.UploadHash)"; Write-Verbose $embedInfo[-1];
+        if ($imagemetadata.LastWriteTimeUtc -gt $existingUploadModifiedDate.Add($script:DateCompareJitterHours)) {
+          $embedinfo += "Existing article embed with id $($existingUpload.id) modified at $existingUploadModifiedDate; local file last write time is $($imagemetadata.LastWriteTimeUtc). replace with new (local) version."; Write-Verbose $embedInfo[-1];
+          $embedInfo += "Existing article embed '$($existingUpload.name)' with id $($existingUpload.id) does NOT match file '$ImageFile' by hash and local file appears newer."; Write-Verbose $embedInfo[-1];
+          try {remove-huduupload -id $existingUpload.id -confirm:$false} catch { $embedInfo += "Failed to remove older existing upload with id $($existingUpload.id): $($_.Exception.Message)"; write-warning $embedInfo[-1] }
+          $existingUpload = $null
+        } else {
+          $embedInfo += "Existing article embed with id $($existingUpload.id) modified at $existingUploadModifiedDate; local file last write time is $($imagemetadata.LastWriteTimeUtc). keeping existing upload."; Write-Verbose $embedInfo[-1];
+          $embedInfo += "Existing article embed '$($existingUpload.name)' with id $($existingUpload.id) does NOT match file '$ImageFile' by hash but local file appears older. keeping existing upload."; Write-Verbose $embedInfo[-1];
+        }
+      }
+    }
 
     if (-not $existingUpload) {
         $uploaded = New-HuduUpload -FilePath $ImageFile -Uploadable_Type 'Article' -Uploadable_Id $articleUsed.Id
@@ -328,13 +256,22 @@ function Set-HuduArticleFromHtml {
 
   $ctx = @{ ImageMap = $imageMap; ArticleMap = $articleMap }
   $r = Rewrite-DocLinks -Html $HtmlContents -ImageResolver $ImageResolver -LinkResolver $LinkResolver -Context $ctx
-  Set-HuduArticle -Id $articleUsed.Id -CompanyId $articleUsed.company_id -Content $r.Html | Out-Null
+  $articleUpdateParams = @{
+    Id = $articleUsed.Id
+    Content = [string]($r.Html ?? '')
+  }
+  if ($articleUsed.company_id) {
+    $articleUpdateParams.CompanyId = [int]$articleUsed.company_id
+  }
+  $updatedArticle = Set-HuduArticle @articleUpdateParams
+  $updatedArticle = $updatedArticle.article ?? $updatedArticle
   [pscustomobject]@{
     Title       = $Title
     Article     = $r.Html
-    HuduArticle = $articleUsed
+    HuduArticle = $updatedArticle
     HuduImages  = $HuduImages
     HuduCompany = $matchedCompany
+    EmbedInfo   = $embedInfo
     Rewrites    = $r.Rewrites
     Unresolved  = $r.Unresolved
   }
@@ -697,9 +634,21 @@ function Set-HuduArticleFromPDF {
     [Parameter(Mandatory)][string]$PdfPath,
     [string]$CompanyName,
     [string]$Title,
-    [bool]$includeOriginal=$true # include original pdf attached to converted article
+    [bool]$includeOriginal=$true, # include original pdf attached to converted article
+    [bool]$CalculateHashes = $true,
+    [int]$MaxHtmlCharacters = 0
   )
 
+    $null = Get-EnsuredPath -Path $DocConversionTempDir
+
+    if (-not $script:CurrentHuduVersion) {
+        $appInfo = Get-HuduAppInfo
+        $script:CurrentHuduVersion = [version]$appInfo.version
+    }
+
+    if (-not $script:DateCompareJitterHours) {
+        $script:DateCompareJitterHours = [timespan]::FromHours(12)
+    }  
   if (-not (Test-Path -LiteralPath $PdfPath -PathType Leaf)) { write-warning "NO PDF, $($PdfPath)"; return $null }
 
   $pdfBaseName = [IO.Path]::GetFileNameWithoutExtension($PdfPath)
@@ -708,12 +657,61 @@ function Set-HuduArticleFromPDF {
 
   $displayTitle = if ($Title) { $Title } else { $pdfBaseName }
 
+  if ($MaxHtmlCharacters -gt 0 -and $pdfData.Html.Length -gt $MaxHtmlCharacters) {
+    $matchedCompany = $null
+    if ($CompanyName) {
+      $matchedCompany = ChoseBest-ByName -Name $CompanyName -choices (Get-HuduCompanies)
+    }
+
+    $articleUsed = if ($matchedCompany) {
+      Get-HuduArticles -CompanyId $matchedCompany.id -Name $displayTitle | Select-Object -First 1
+    } else {
+      Get-HuduArticles -Name $displayTitle | Where-Object { $null -eq $_.company_id } | Select-Object -First 1
+    }
+    $articleUsed = $articleUsed.article ?? $articleUsed
+
+    if (-not $articleUsed) {
+      $articleUsed = if ($matchedCompany) {
+        New-HuduArticle -Name $displayTitle -Content "Attaching Upload" -CompanyId $matchedCompany.id
+      } else {
+        New-HuduArticle -Name $displayTitle -Content "Attaching Upload"
+      }
+      $articleUsed = $articleUsed.article ?? $articleUsed
+    }
+
+    $existingUpload = Get-HuduUploads |
+      Where-Object { $_.uploadable_type -eq 'Article' -and $_.uploadable_id -eq $articleUsed.id -and $_.name -ieq ([IO.Path]::GetFileName($PdfPath)) } |
+      Select-Object -First 1
+    $existingUpload = $existingUpload.upload ?? $existingUpload
+    $upload = $existingUpload ?? $(New-HuduUpload -FilePath $PdfPath -Uploadable_Type 'Article' -Uploadable_Id $articleUsed.Id)
+    $upload = $upload.upload ?? $upload
+
+    $content = "<h2>$([System.Net.WebUtility]::HtmlEncode([IO.Path]::GetFileName($PdfPath)))</h2><p>Converted HTML was $($pdfData.Html.Length) characters, over limit $MaxHtmlCharacters. Original file attached instead.</p><p><a href='$($upload.url)'>See attached document</a></p>"
+    $updatedArticle = if ($matchedCompany) {
+      Set-HuduArticle -Id $articleUsed.id -CompanyId $matchedCompany.id -Content $content
+    } else {
+      Set-HuduArticle -Id $articleUsed.id -Content $content
+    }
+    $updatedArticle = $updatedArticle.article ?? $updatedArticle
+
+    return [pscustomobject]@{
+      Title       = $displayTitle
+      Article     = $content
+      HuduArticle = $updatedArticle
+      HuduImages  = @()
+      HuduCompany = $matchedCompany
+      EmbedInfo   = @("PDF converted HTML was $($pdfData.Html.Length) characters, over limit $MaxHtmlCharacters. Used attachment-only fallback.")
+      Rewrites    = @()
+      Unresolved  = @()
+    }
+  }
+
   $newDoc = Set-HuduArticleFromHtml `
               -ImagesArray  ($pdfData.Images ?? @()) `
               -CompanyName  $CompanyName `
               -Title        $displayTitle `
               -HtmlContents $pdfData.Html `
-              -HuduBaseUrl  (Get-HuduBaseURL)
+              -HuduBaseUrl  (Get-HuduBaseURL) -calculatehashes ([bool]$($CalculateHashes -and $script:CurrentHuduVersion -ge [version]'2.41.0'))
 
   if ($true -eq $includeOriginal){
     New-HuduUpload -FilePath $PdfPath -Uploadable_Type 'Article' -Uploadable_Id $newDoc.HuduArticle.Id | Out-Null
@@ -878,226 +876,679 @@ Set-HuduArticleFromWebPage -uri "https://en.wikipedia.org/wiki/Special:Random" -
 # from a PDF file
 Set-HuduArticleFromPDF -pdfPath "$($(Get-ChildItem $(join-path -Path $HOME -ChildPath "Downloads") -File -Filter "*.pdf" | select-object -First 1) ?? "c:\tmp\somepdf.pdf")" -companyname "$($env:USERNAME)'s company" -title "new article from pdf"
 
-# From a folder containing any type of files
-Set-HuduArticleFromResourceFolder -resourcesFolder "$(join-path -Path $HOME -ChildPath "Desktop") " -companyname "$($env:USERNAME)'s company" -title "$($env:USERNAME)'s Desktop Contents"
-
 # From a local folder containing a webpage and images
 Set-HuduArticleFromResourceFolder -resourcesFolder "$(join-path -Path $HOME -ChildPath "Pictures")" -companyname "$($env:USERNAME)'s company" -title "local pictures in $(join-path -Path $HOME -ChildPath "Pictures")"
 
 "@
 
+function Write-Info {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Message
+    )
+    $VerbosePreference = 'Continue'
+    write-verbose $Message
+    $VerbosePreference = 'SilentlyContinue'
+}
+function Test-DocumentSetSafety {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [System.IO.FileSystemInfo[]]$Items,
 
+        [int]$MaxItems,
+        [long]$MaxTotalBytes,
+        [long]$MaxItemBytes
+    )
 
-    function Test-DocumentSetSafety {
-        [CmdletBinding()]
-        param(
-            [Parameter(Mandatory)]
-            [System.IO.FileSystemInfo[]]$Items,
-
-            [int]$MaxItems,
-            [long]$MaxTotalBytes,
-            [long]$MaxItemBytes
-        )
-
-        if (-not $Items -or $Items.Count -eq 0) {
-            Write-Warning "No source items found after filtering."
-            return $false
-        }
-
-        $files = $Items | Where-Object { -not $_.PSIsContainer }
-
-        $count       = $Items.Count
-        $fileCount   = $files.Count
-        $totalBytes  = ($files | Measure-Object Length -Sum).Sum
-        $largestItem = ($files  | Measure-Object Length -Maximum).Maximum
-
-        $tooMany      = $count      -gt $MaxItems
-        $tooLargeTotal= $totalBytes -gt $MaxTotalBytes
-        $tooLargeItem = $largestItem -gt $MaxItemBytes
-
-        Write-Host "Selected items: $count (files: $fileCount)" -ForegroundColor Cyan
-        Write-Host ("Total size   : {0:N0} bytes" -f $totalBytes) -ForegroundColor Cyan
-        Write-Host ("Largest item : {0:N0} bytes" -f $largestItem) -ForegroundColor Cyan
-
-        if (-not ($tooMany -or $tooLargeTotal -or $tooLargeItem)) {
-            return $true
-        }
-
-        Write-Warning "One or more safety limits were exceeded:"
-        if ($tooMany) {
-            Write-Warning " - Item count $count exceeds MaxItems $MaxItems"
-        }
-        if ($tooLargeTotal) {
-            Write-Warning (" - Total size {0:N0} exceeds MaxTotalBytes {1:N0}" -f $totalBytes, $MaxTotalBytes)
-        }
-        if ($tooLargeItem) {
-            Write-Warning (" - Largest item {0:N0} exceeds MaxItemBytes {1:N0}" -f $largestItem, $MaxItemBytes)
-        }
-
-
-        $answer = Read-Host "Type 'YES' to proceed anyway (anything else will abort)"
-        if ($answer -eq 'YES') {
-            Write-Warning "Proceeding despite safety warnings."
-            return $true
-        } else {
-            Write-Host "Aborting per user choice." -ForegroundColor Yellow
-            return $false
-        }
+    if (-not $Items -or $Items.Count -eq 0) {
+        Write-Warning "No source items found after filtering."
+        return $false
     }
 
+    $files = $Items | Where-Object { -not $_.PSIsContainer }
+
+    $count       = $Items.Count
+    $fileCount   = $files.Count
+    $totalBytes  = ($files | Measure-Object Length -Sum).Sum
+    $largestItem = ($files  | Measure-Object Length -Maximum).Maximum
+
+    $tooMany      = $count      -gt $MaxItems
+    $tooLargeTotal= $totalBytes -gt $MaxTotalBytes
+    $tooLargeItem = $largestItem -gt $MaxItemBytes
+
+    Write-Info -Message "Selected items: $count (files: $fileCount)"
+    Write-Info -Message ("Total size   : {0:N0} bytes" -f $totalBytes)
+    Write-Info -Message ("Largest item : {0:N0} bytes" -f $largestItem)
+
+    if (-not ($tooMany -or $tooLargeTotal -or $tooLargeItem)) {
+        return $true
+    }
+
+    Write-Warning "One or more safety limits were exceeded:"
+    if ($tooMany) {
+        Write-Warning " - Item count $count exceeds MaxItems $MaxItems"
+    }
+    if ($tooLargeTotal) {
+        Write-Warning (" - Total size {0:N0} exceeds MaxTotalBytes {1:N0}" -f $totalBytes, $MaxTotalBytes)
+    }
+    if ($tooLargeItem) {
+        Write-Warning (" - Largest item {0:N0} exceeds MaxItemBytes {1:N0}" -f $largestItem, $MaxItemBytes)
+    }
+
+
+    $answer = Read-Host "Type 'YES' to proceed anyway (anything else will abort)"
+    if ($answer -eq 'YES') {
+        Write-Warning "Proceeding despite safety warnings."
+        return $true
+    } else {
+        Write-Info -Message "Aborting per user choice."
+        return $false
+    }
+}
+
+function Test-ShouldUpdateUpload {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][bool]$UpdateOnMatch,
+    [Parameter(Mandatory)][ValidateSet('date','filehash','none')][string]$Strategy,
+
+    [Parameter(Mandatory)][datetime]$SourceMTimeUtc,
+    [string]$SourceSha256,
+
+    # destination (may be $null if no upload yet)
+    [object]$DestUpload
+  )
+
+  if (-not $UpdateOnMatch) { return $false }
+  if ($Strategy -eq 'none') { return $false }
+  if ($null -eq $DestUpload) { return $true } # nothing exists yet => upload
+
+  # normalize dest updated time to UTC
+  $destUpdatedUtc = $null
+  if ($DestUpload.PSObject.Properties.Name -contains 'created_at' -and $DestUpload.updated_at) {
+    try { $destUpdatedUtc = ([datetime]$DestUpload.updated_at).ToUniversalTime() } catch {}
+  }
+
+  switch ($Strategy) {
+    'date' {
+      if ($null -eq $destUpdatedUtc) { return $true }           # can’t compare => choose update
+      return ($SourceMTimeUtc -gt $destUpdatedUtc)
+    }
+
+    'filehash' {
+      if ([string]::IsNullOrWhiteSpace($SourceSha256)) { return $true } # can’t compare => update
+
+      $destHash = $null
+      foreach ($p in @('sha256','checksum','hash')) {
+        if ($DestUpload.PSObject.Properties.Name -contains $p -and $DestUpload.$p) { $destHash = $DestUpload.$p; break }
+      }
+
+      # fallback if no hash (as in folder / dir upload strategy) is to compare by date if available, otherwise update
+      if ([string]::IsNullOrWhiteSpace($destHash)) {
+        if ($null -ne $destUpdatedUtc) { return ($SourceMTimeUtc -gt $destUpdatedUtc) }
+        return $true
+      }
+
+      return ($SourceSha256.ToUpperInvariant() -ne $destHash.ToUpperInvariant())
+    }
+  }
+}
+
+function Test-ShouldUpdateUpload {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][bool]$UpdateOnMatch,
+    [Parameter(Mandatory)][ValidateSet('date','filehash','none')][string]$Strategy,
+    # local
+    [Parameter(Mandatory)][datetime]$SourceMTimeUtc,
+    [string]$SourceSha256,
+    [object]$DestUpload
+  )
+
+  if (-not $UpdateOnMatch) { return $false }
+  if ($Strategy -eq 'none') { return $false }
+  if ($null -eq $DestUpload) { return $true }
+
+  # normalize dest updated time to UTC
+  $destUpdatedUtc = $null
+  if ($DestUpload.PSObject.Properties.Name -contains 'updated_at' -and $DestUpload.updated_at) {
+    try { $destUpdatedUtc = ([datetime]$DestUpload.updated_at).ToUniversalTime() } catch {}
+  }
+
+  switch ($Strategy) {
+    'date' {
+      if ($null -eq $destUpdatedUtc) { return $true }           # can’t compare => choose update
+      return ($SourceMTimeUtc -gt $destUpdatedUtc)
+    }
+
+    'filehash' {
+      if ([string]::IsNullOrWhiteSpace($SourceSha256)) { return $true } # can’t compare => update
+
+      # If your Hudu upload object includes a hash/checksum field, use it here.
+      $destHash = $null
+      foreach ($p in @('sha256','checksum','hash')) {
+        if ($DestUpload.PSObject.Properties.Name -contains $p -and $DestUpload.$p) { $destHash = $DestUpload.$p; break }
+      }
+
+      # fall back to date if no hash is available (folder) 
+      if ([string]::IsNullOrWhiteSpace($destHash)) {
+        if ($null -ne $destUpdatedUtc) { return ($SourceMTimeUtc -gt $destUpdatedUtc) }
+        return $true
+      }
+
+      return ($SourceSha256.ToUpperInvariant() -ne $destHash.ToUpperInvariant())
+    }
+  }
+}
 function New-HuduArticleFromLocalResource {
   param (
     [string]$resourceLocation,
     [string]$companyName=$null,
     [array]$companyDocs=$null,
     [bool]$updateOnMatch=$true,
+    [ValidateSet('date','filehash','none')][string]$UpdateStrategy='filehash',
     [bool]$includeOriginals=$true,
+    [int]$MaxHtmlCharacters=90000,
+    [Parameter(Mandatory)][string]$DocConversionTempDir,
     [array]$EmbeddableImageExtensions=@(".jpg", ".jpeg",".png",".gif",".bmp",".webp",".svg",".apng",".avif",".ico",".jfif",".pjpeg",".pjp"),
-    [System.Collections.ArrayList]$DisallowedForConvert=[System.Collections.ArrayList]@(".mp3", ".wav", ".flac", ".aac", ".ogg", ".wma", ".m4a",".dll", ".so", ".lib", ".bin", ".class", ".pyc", ".pyo", ".o", ".obj",".exe", ".msi", ".bat", ".cmd", ".sh", ".jar", ".app", ".apk", ".dmg", ".iso", ".img",".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".tgz", ".lz",".mp4", ".avi", ".mov", ".wmv", ".mkv", ".webm", ".flv",".psd", ".ai", ".eps", ".indd", ".sketch", ".fig", ".xd", ".blend", ".vsdx",".ds_store", ".thumbs", ".lnk", ".heic", ".eml", ".msg", ".esx", ".esxm")
+    [System.Collections.ArrayList]$DisallowedForConvert=[System.Collections.ArrayList]@(".mp3", ".wav", ".flac", ".aac", ".ogg", ".wma", ".m4a",".dll", ".so", ".lib", ".bin", ".class", ".pyc",".rdp",".pjpg",".pfile",".ptxt",".ppt",".pptx", ".pyo", ".o", ".obj",".exe", ".msi", ".bat", ".cmd", ".sh", ".jar", ".app", ".apk", ".dmg", ".iso", ".img",".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".tgz", ".lz",".mp4", ".avi", ".mov", ".wmv", ".mkv", ".webm",".pdf", ".flv",".psd", ".ai", ".eps", ".indd", ".sketch", ".fig", ".xd", ".blend", ".vsdx",".ds_store", ".thumbs", ".lnk", ".heic", ".eml", ".msg", ".esx", ".esxm")
   )
-    $company = $null
-    if ([string]::IsNullOrEmpty($companyName)){
-      write-host "No company specified, assuming global kb."
+    $VerbosePreference = 'Continue'
+
+    Get-EnsuredPath -Path $DocConversionTempDir
+    $null = Get-EnsuredPath -Path $DocConversionTempDir
+
+    if (-not $script:CurrentHuduVersion) {
+        $appInfo = Get-HuduAppInfo
+        $script:CurrentHuduVersion = [version]$appInfo.version
+    }
+
+    if (-not $script:DateCompareJitterHours) {
+        $script:DateCompareJitterHours = [timespan]::FromHours(12)
+    }
+    $MatchedDocs = $null; $exactMatch = $null;
+    $results = [pscustomobject]@{
+        RequestParams = @{DisallowedForConvert=$DisallowedForConvert; EmbeddableImageExtensions = $EmbeddableImageExtensions; includeOriginals=$includeOriginals; updateOnMatch=$updateOnMatch; companyName=$companyName; UpdateStrategy = $UpdateStrategy; MaxHtmlCharacters = $MaxHtmlCharacters;}
+        Company=$null; Result=$null; Action=$null; Error=$null; Global=$null; IsPDF = $null; IsImage = $null; Results = $null; FileHash = $null; AllowedToConvertFile = $null; OriginalName = $null; ShouldConvert = $null; MatchedDoc = $null; IsGlobalKB = $null; ArticleResult = $null; Strategy = $null; SourceLastModified = $null; IsDirectory=$null; Images = @(); OriginalEXT = $null; loggedMessages = @(); OutputDir = $null; HTMLPath = $null; HtmlCharacterCount = $null; isScript =$null;
+        attachmentStatus = "No attachment info yet."; AttachmentHashInfo = $null; LocalAttachmentNewer = $null; RemoteAttachmentUTCdate = $null;
+        NewDoc = $null; OriginalDoc = $null; Upload = $null; CalculateEmbedHashes = ([bool]($script:CurrentHuduVersion -ge [version]("2.41.0")))
+    }
+
+    if (([string]::IsNullOrWhiteSpace($resourceLocation)) -or -not $(test-path $resourceLocation)){
+        $results.Error= "resource location $resourceLocation does not appear to be a valid path"; Write-Warning $results.Error; 
+        return $results
+    }
+    if (-not ([string]::IsNullOrEmpty($companyName))){
+        $results.Company = $(ChoseBest-ByName -Name $companyName -choices $(get-huducompanies)) ?? $null
+    }
+    $results.IsGlobalKB = [bool]$($null -eq $results.Company)
+    Write-Info "$(if ($results.IsGlobalKB) {'Global KB'} else {"Company '$($results.Company.name)' KB"}) will be target for this article"
+
+    $companyDocs = $companyDocs ?? $(if ($true -eq $results.IsGlobalKB) {Get-HuduArticles} else {Get-HuduArticles -companyId $results.Company.id})
+    $results.OriginalDoc = Get-Item -LiteralPath $resourceLocation
+    $results.originalExt  = [IO.Path]::GetExtension($results.OriginalDoc.Name).ToLowerInvariant()
+    $results.originalName = [IO.Path]::GetFileNameWithoutExtension($results.OriginalDoc.Name)    
+    $results.SourceLastModified = $results.OriginalDoc.LastWriteTimeUtc; Write-Verbose "source document $($results.originalName) last modified (UTC): $($results.SourceLastModified)";
+    # determine if we're looking at a file or directory and set strategy
+    if ($results.OriginalDoc.PSIsContainer) {
+        $results.isDirectory = $true
+        $results.Strategy = "user-supplied path appears to be a directory. proccing it as a resource itself (gallery of photos, index of files)"; Write-Info -Message $results.Strategy
+        try {
+            $results.NewDoc = if ($null -ne $results.Company) {
+                Set-HuduArticleFromResourceFolder -resourcesFolder $results.OriginalDoc -companyName $results.Company.name
+            } else {
+                Set-HuduArticleFromResourceFolder -resourcesFolder $results.OriginalDoc
+            }
+            $results.Result = $results.NewDoc.HuduArticle ?? $results.NewDoc.article ?? $results.NewDoc
+            return $results
+        } catch {
+            $results.Error="Error creating article from resource folder $_"
+            return $results 
+        }
+    } else {$results.isDirectory = $false}
+
+    $results.Strategy = "user-supplied path appears to be a file. determining strategy for single-file"; Write-Info -Message $results.Strategy
+    $results.AllowedToConvertFile = -not ($DisallowedForConvert -contains $results.originalExt)
+    $results.isPdf        = ($results.originalExt -eq '.pdf')
+    $results.isImage      = ($results.originalExt -in $EmbeddableImageExtensions)
+    $results.isScript     = ($results.originalExt -in @(".sh", ".expect", ".ps1", ".bat", ".cmd", ".py", ".js", ".vbs", ".wsf", ".psm1", ".psd1"))
+    $results.FileHash     = "$($(Get-FileHash -LiteralPath $results.OriginalDoc.FullName -Algorithm SHA256).Hash)"
+
+    $exactMatch = $exactMatch ?? $($companyDocs | Where-Object {$_.name -ieq $results.originalName -or $_.name -ieq $results.OriginalDoc.Name} | Select-Object -First 1)
+    $exactMatch = $exactMatch ?? $(if ($true -eq $results.IsGlobalKB) {get-huduarticles -name $results.originalName | where-object {$null -eq $_.company_id}} else {$companyDocs | Where-Object { $_.name -ieq $results.originalName } | Select-Object -First 1})
+
+    if ($exactMatch) {
+        $results.MatchedDoc = $exactMatch.article ?? $exactMatch
+            write-info "Exact match for $(if ($true -eq $results.IsGlobalKB) {"Global KB"} else {"Company '$($results.Company.name)' KB"}) article found with name '$($results.MatchedDoc.name)'. This will be the matched document used for update comparison and potential update if updateOnMatch is enabled."
     } else {
-      $company = $(ChoseBest-ByName -Name $companyName -choices $(get-huducompanies)) ?? $null
-    }
-
-    $IsGlobalKB = [bool]$($null -eq $company)
-    $companyDocs = $companyDocs ?? $(if ($true -eq $IsGlobalKB) {Get-HuduArticles} else {Get-HuduArticles -companyId $company.id})
-    if (-not $(test-path $resourceLocation)){
-      Write-Error "resource location $resourceLocation does not appear to be a valid path"
-        return @{ company=$CompanyName; from=$doc.FullName; to="resource path specified $resourceLocation is not valid"; }
-    } else {write-host "user-supplied path seems to exist"}
-    $doc = Get-Item -LiteralPath $resourceLocation
-
-    if ($doc.PSIsContainer) {
-      Write-Host "user-supplied resource appears to be a directory. processing as such"
-      try {
-        $resourceFolderResult = if ($company) {
-          Set-HuduArticleFromResourceFolder -resourcesFolder $doc -companyName $company.name
-        } else {
-          Set-HuduArticleFromResourceFolder -resourcesFolder $doc
-        }
-        return @{ company=$company?.name; from=$doc.FullName; to=$resourceFolderResult }
-      } catch {
-        return @{ company=$company?.name; from=$doc.FullName; to="Error creating article from resource folder"; Exception=$_ }
-      }
-    }
-
-    write-host "user-supplied path appears to be a file. determining strategy for single-file"
-    try {
-      $originalExt  = [IO.Path]::GetExtension($doc.Name).ToLowerInvariant()
-      $originalName = [IO.Path]::GetFileNameWithoutExtension($doc.Name)
-      $isDisallowed = $DisallowedForConvert -contains $originalExt
-      $isPdf        = ($originalExt -eq '.pdf')
-      $isImage      = $originalExt -in $EmbeddableImageExtensions
-
-
-      $shouldConvert = -not $isDisallowed
-      Write-Host "• $($doc.Name) — ext=$originalExt; disallowed=$isDisallowed; pdf=$isPdf; convert=$shouldConvert"
-      $MatchedDocs = $null
-      if (-not ([string]::IsNullOrEmpty($originalName)) -and $companyDocs -and $companyDocs.count -gt 0){
         $MatchedDocs = $companyDocs | Where-Object {
-          (Test-Equiv -A $_.name -B $originalName) -or $(Compare-StringsIgnoring -A $_.name -B $originalName)
+            (Test-Equiv -A $_.name -B $results.originalName) -or
+            (Test-Equiv -A $_.name -B $results.OriginalDoc.Name) 
         }
-        if ($MatchedDocs -or $MatchedDocs.count -gt 0){
-          if ($false -eq $updateOnMatch){
-              $skipReason = "Skipped on basis of $originalName matched existing documents: $($MatchedDocs.name -join ', ')"
-              return @{ company=$CompanyName; from=$doc.FullName; to='Skipped'; Explain=$skipReason; Global=$IsGlobalKB; }
-              continue
-          } else {
-              $MatchedDocs = $($MatchedDocs | Select-Object -First 1) ?? $MatchedDocs
-              Write-Host "Article $($MatchedDocs.Name) matched and set to be SKIPPED from $($doc.FullName)"
-              continue
-          }
+        if ($MatchedDocs) {
+            $results.MatchedDoc = ($MatchedDocs | Select-Object -First 1)
+            $results.MatchedDoc = $results.MatchedDoc.article ?? $results.MatchedDoc
         }
-      } else {$MatchedDocs=$null}
+    }
+    if ($null -ne $results.MatchedDoc) {
+        if (-not $updateOnMatch) {
+            $results.Action = "SkippedMatch(updateOnMatch=false)"; Write-Info -Message $results.Action
+            $results.NewDoc = $results.MatchedDoc
+            $results.Result = $results.MatchedDoc
+            return $results
+        } 
+        $matchedSourceUpload = Get-HuduUploads |
+            Where-Object {
+                $_.uploadable_id -eq $results.MatchedDoc.id -and
+                $_.uploadable_type -eq 'Article' -and
+                ($_.name -ieq $results.OriginalDoc.Name -or $_.name -ieq $results.originalName)
+            } |
+            Select-Object -First 1
+        $matchedSourceUpload = $matchedSourceUpload.upload ?? $matchedSourceUpload
 
-      $newDoc = $null
-      if ($isImage) {
-        Write-Host "Processing as single-informatic image"
-        return $(Set-HuduArticleFromHtml `
-                    -ImagesArray @($doc.FullName) `
-                    -Title $originalName `
-                    -CompanyName $(if ($IsGlobalKB) { '' } else { $company.name }) `
-                    -HtmlContents "<img src='$($doc.Name)' alt='$originalName' />")
-      }  elseif ($isPdf) {
-        Write-Host "Processing as singular pdf"        
+        if ($UpdateStrategy -ieq 'date') {
+            $destUpload = $matchedSourceUpload ?? @($results.MatchedDoc.attachments)[0]
+
+            if (-not $destUpload) {
+                Write-Info "Matched article '$($results.MatchedDoc.name)' has no existing attachment metadata; proceeding with update."
+                $shouldUpdate = $true
+            } else {
+                $shouldUpdate = Test-ShouldUpdateUpload `
+                    -UpdateOnMatch $updateOnMatch `
+                    -Strategy $results.UpdateStrategy `
+                    -SourceMTimeUtc $results.SourceLastModified `
+                    -DestUpload $destUpload
+            }
+
+            $results.Action = if ($shouldUpdate) {
+                "Matched existing article '$($results.MatchedDoc.name)' but source is newer or no dest upload exists; proceeding with update."
+            } else {
+                "Matched existing article '$($results.MatchedDoc.name)' and source is not newer; skipping update."
+            }
+
+            Write-Info -Message $results.Action
+            if (-not $shouldUpdate) {
+                $results.NewDoc = $results.MatchedDoc
+                $results.Result = $results.MatchedDoc
+                return $results
+            }
+        }
+        elseif ($UpdateStrategy -ieq 'filehash') {
+            $destUpload = $matchedSourceUpload ?? @($results.MatchedDoc.attachments)[0]
+
+            if (-not $destUpload) {
+                Write-Info "Matched article '$($results.MatchedDoc.name)' has no existing attachment metadata; proceeding with update."
+                $shouldUpdate = $true
+            } elseif ($matchedSourceUpload -and $matchedSourceUpload.id -and $true -eq $results.CalculateEmbedHashes) {
+                try {
+                    $results.AttachmentHashInfo = Compare-UploadHashWithFile -UploadId $matchedSourceUpload.id -LocalFile $results.OriginalDoc.FullName
+                    $shouldUpdate = -not $results.AttachmentHashInfo.SameFile
+                } catch {
+                    Write-Warning "Could not compare existing upload hash for '$($results.OriginalDoc.Name)': $($_.Exception.Message). Falling back to metadata comparison."
+                    $shouldUpdate = Test-ShouldUpdateUpload `
+                        -UpdateOnMatch $updateOnMatch `
+                        -Strategy $results.UpdateStrategy `
+                        -SourceMTimeUtc $results.SourceLastModified `
+                        -SourceSha256 $results.FileHash `
+                        -DestUpload $destUpload
+                }
+            } else {
+                $shouldUpdate = Test-ShouldUpdateUpload `
+                    -UpdateOnMatch $updateOnMatch `
+                    -Strategy $results.UpdateStrategy `
+                    -SourceMTimeUtc $results.SourceLastModified `
+                    -SourceSha256 $results.FileHash `
+                    -DestUpload $destUpload
+            }
+
+            $results.Action = if ($shouldUpdate) {
+                "Matched existing article '$($results.MatchedDoc.name)' but file hash differs or no dest upload exists; proceeding with update."
+            } else {
+                "Matched existing article '$($results.MatchedDoc.name)' and file hash matches; skipping update."
+            }
+
+            Write-Info -Message $results.Action
+            if (-not $shouldUpdate) {
+                $results.NewDoc = $results.MatchedDoc
+                $results.Result = $results.MatchedDoc
+                return $results
+            }
+        }        
+    } else {Write-Info "No existing article match found for $(if ($true -eq $results.IsGlobalKB) {"Global KB"} else {"Company '$($results.Company.name)' KB"}) with name matching '$($results.originalName)'. A new article will be created."}
+
+      
+    try {
+
+    if ($true -eq $results.isScript) {
+        $safeName = ($results.originalName -replace '[^\w\.-]', '_')
+        $results.HtmlPath = [IO.Path]::Combine($DocConversionTempDir,"$safeName-$(Get-Date -Format 'yyyyMMddHHmmss').html")
+        $html = Get-HTMLTemplatedScriptContent -FilePath $results.OriginalDoc.FullName -Heading $results.originalName -OutputPath $results.HtmlPath
+        Write-Verbose "HTML from script generated at $($results.HtmlPath) with contents $($html | Out-String)"
+        $results.NewDoc = Set-HuduArticleFromHtml -ImagesArray @() -CompanyName $(if ($results.IsGlobalKB) { '' } else { $results.Company.name }) -Title $results.originalName -HtmlContents $html -CalculateHashes $results.CalculateEmbedHashes
+    } elseif ($true -eq $results.isImage) {
+        $results.Strategy = "Processing as single-informatic image, to be embedded in Article"; Write-Info -Message $results.Strategy
+        $results.NewDoc = $(Set-HuduArticleFromHtml -ImagesArray @($results.OriginalDoc.FullName) -Title $results.originalName -CompanyName $(if ($results.IsGlobalKB) { '' } else { $results.Company.name }) -HtmlContents "<img src='$($results.OriginalDoc.Name)' alt='$results.originalName' />")
+      }  elseif ($true -eq $results.isPdf) {
+        $results.Strategy = "Processing as singular PDF to convert and attach as Article."; Write-Info -Message $results.Strategy
     # conversion process - pdf [convert to html and attach graphics]
-        $newDoc = Set-HuduArticleFromPDF -PdfPath $doc.FullName -CompanyName $(if ($true -eq $IsGlobalKB) {''} else {$CompanyName}) -Title $originalName
-        Write-Host "Hudu response:" ($newDoc | ConvertTo-Json -Depth 5)
-        $newDoc = $newDoc.HuduArticle
-      } elseif ($true -eq $shouldConvert) {
+        $results.NewDoc = Set-HuduArticleFromPDF -PdfPath $results.OriginalDoc.FullName -CompanyName $(if ($true -eq $results.IsGlobalKB) {''} else {$CompanyName}) -Title $results.originalName -includeOriginal $includeOriginals -CalculateHashes $results.CalculateEmbedHashes -MaxHtmlCharacters $MaxHtmlCharacters
+        $results.NewDoc = $results.NewDoc.HuduArticle;
+      } elseif ($true -eq $results.AllowedToConvertFile) {
     # conversion process - non-pdf [but convertable]
-            $outputDir = Join-Path $DocConversionTempDir ([guid]::NewGuid().ToString())
-            $null = New-Item -ItemType Directory -Path $outputDir -Force
-
-            $localIn = Join-Path $outputDir $doc.Name
-            Copy-Item -LiteralPath $doc.FullName -Destination $localIn -Force
-
-            $htmlPath = Convert-WithLibreOffice -InputFile $localIn `
-                                                -OutputDir $outputDir `
-                                                -SofficePath $sofficePath
-            if ([string]::IsNullOrWhiteSpace($htmlPath) -or -not (Test-Path -LiteralPath $htmlPath)) {
-                $htmlPath = get-childitem -Path $outputDir -Filter "*.xhtml" -File | Select-Object -First 1
-                $htmlPath = $htmlPath ?? $(get-childitem -Path $outputDir -Filter "*.html" -File | Select-Object -First 1)
+        $results.Strategy = "Processing as singular file to convert to and attach as Article."; Write-Info -Message $results.Strategy
+            $results.outputDir = Join-Path $DocConversionTempDir ([guid]::NewGuid().ToString())
+            $null = New-Item -ItemType Directory -Path $results.outputDir -Force
+            $localIn = Join-Path $results.outputDir $results.OriginalDoc.Name
+            Copy-Item -LiteralPath $results.OriginalDoc.FullName -Destination $localIn -Force
+            $VerbosePreference = 'Continue'
+            $results.htmlpath = Convert-WithLibreOffice -InputFile $localIn -OutputDir $results.outputDir -SofficePath $sofficePath
+            $VerbosePreference = 'SilentlyContinue'
+            if ([string]::IsNullOrWhiteSpace($results.htmlpath) -or -not (Test-Path -LiteralPath $results.htmlpath)) {
+                $results.htmlpath = get-childitem -Path $results.outputDir -Filter "*.xhtml" -File | Select-Object -First 1
+                $results.htmlpath = $results.htmlpath ?? $(get-childitem -Path $results.outputDir -Filter "*.html" -File | Select-Object -First 1)
             }
-            if ([string]::IsNullOrWhiteSpace($htmlPath) -or -not (Test-Path -LiteralPath $htmlPath)) {
-                throw "Conversion to HTML failed for $($doc.FullName); no HTML output found."
+            if ([string]::IsNullOrWhiteSpace($results.htmlpath)) {
+                $results.Error = "Conversion to HTML failed for $($results.OriginalDoc.FullName); no HTML output found. Falling back to attachment-only article.";
+                $results.Action = "ConversionFailedAttachmentFallback"
+                $results.AllowedToConvertFile = $false
+                Write-Warning $results.Error
+                if ($null -ne $results.MatchedDoc) {
+                    $results.NewDoc = $results.MatchedDoc
+                } else {
+                    $results.NewDoc = if ($results.IsGlobalKB) {
+                        New-HuduArticle -name $results.originalName -content "Attaching Upload"
+                    } else {
+                        New-HuduArticle -name $results.originalName -companyId $results.Company.id -content "Attaching Upload"
+                    }
+                }
+            } else {
+                $htmlContents = Get-Content -Encoding utf8 -Raw $results.htmlpath
+                $results.HtmlCharacterCount = $htmlContents.Length
+                if ($MaxHtmlCharacters -gt 0 -and $results.HtmlCharacterCount -gt $MaxHtmlCharacters) {
+                    $results.Action = "HtmlTooLargeAttachmentFallback"
+                    $results.AllowedToConvertFile = $false
+                    $message = "Converted HTML for $($results.OriginalDoc.FullName) is $($results.HtmlCharacterCount) characters, over limit $MaxHtmlCharacters. Falling back to attachment-only article."
+                    $results.LoggedMessages += $message
+                    Write-Warning $message
+                    if ($null -ne $results.MatchedDoc) {
+                        $results.NewDoc = $results.MatchedDoc
+                    } else {
+                        $results.NewDoc = if ($results.IsGlobalKB) {
+                            New-HuduArticle -name $results.originalName -content "Attaching Upload"
+                        } else {
+                            New-HuduArticle -name $results.originalName -companyId $results.Company.id -content "Attaching Upload"
+                        }
+                    }
+                } else {
+                    $results.Images = Get-ChildItem -LiteralPath $results.outputDir -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Extension -match '^\.(png|jpg|jpeg|gif|bmp|tif|tiff)$' } | Select-Object -ExpandProperty FullName
+                    $results.LoggedMessages += "$($results.Images.count) images extracted during conversion."
+                    $results.NewDoc = Set-HuduArticleFromHtml -ImagesArray ($results.Images ?? @()) -CompanyName $(if ($true -eq $results.IsGlobalKB) {''} else {$CompanyName}) -Title $results.originalName -HtmlContents $htmlContents -CalculateHashes $results.CalculateEmbedHashes
+                }
             }
-            $images = Get-ChildItem -LiteralPath $outputDir -File -Recurse -ErrorAction SilentlyContinue |
-                Where-Object { $_.Extension -match '^\.(png|jpg|jpeg|gif|bmp|tif|tiff)$' } |
-                Select-Object -ExpandProperty FullName
-            write-host "$($images.count) images extracted during conversion."
-            $newDoc = Set-HuduArticleFromHtml -ImagesArray ($images ?? @()) `
-                                            -CompanyName $(if ($true -eq $IsGlobalKB) {''} else {$CompanyName}) `
-                                            -Title $originalName `
-                                            -HtmlContents (Get-Content -Encoding utf8 -Raw $htmlPath)
-            $newDoc = $newDoc.HuduArticle
     # standalone article-as-attachment process [not pdf or convertable]
       } else {
-        $newDoc = $MatchedDocs ?? 
-            $(if ($true -eq $IsGlobalKB) {
-                New-HuduArticle -name $originalName -content "Attaching Upload"
-            } else {
-                New-HuduArticle -name $originalName -companyId $matchedCompany.id -content "Attaching Upload"
-            })
-        $newdoc = $newdoc.article ?? $newdoc
-        $upload = New-HuduUpload -Uploadable_Id $newdoc.id -Uploadable_Type 'Article' -FilePath $doc.FullName; $upload = $upload.upload ?? $upload;
-        $newDoc = if ($true -eq $IsGlobalKB) {
-            Set-HuduArticle -id $newDoc.id -content "<a href='$($upload.url)'>See Attached Document, $($DOC.Name)</a>"
-        } else {
-            Set-HuduArticle -id $newDoc.id -companyId $matchedCompany.id -content "<a href='$($upload.url)'>See Attached Document, $($DOC.Name)</a>"
+        $results.Strategy = "Processing as Attachment to Reference Article, as file cannot be converted and $(if ($null -ne $results.MatchedDoc){"Article with id $($results.MatchedDoc.id) will be updated"} else {"a new article will be created"})."; Write-Info -Message $results.Strategy
+        if ($null -ne $results.MatchedDoc){
+            $existingUpload = get-huduuploads | where-object {$_.uploadable_id -eq $results.MatchedDoc.id -and $_.uploadable_type -eq 'Article' -and $_.name -ieq $results.OriginalDoc.Name} | select-object -first 1; $existingUpload = $existingUpload.upload ?? $existingUpload;            
+            $results.NewDoc = $results.MatchedDoc
         }
-        return @{ company=$CompanyName; from=$doc.FullName; to='Company Upload'; result=($upload.upload ?? $upload) }
-      }
-
-      if ($null -eq $newDoc -or -not $newDoc.id) {
-          $completed += @{ company=$CompanyName; from=$doc.FullName; to='Exception'; error="New Document object $newdoc unexpectedly came back empty" }
-          return @{ company=$CompanyName; from=$doc.FullName; to='Error'; error="article was not created or updated" }
-      }
-
-      if ($includeOriginals) {
-        $upload = New-HuduUpload -Uploadable_Id $newDoc.id -Uploadable_Type 'Article' -FilePath $doc.FullName
-        $upload = $upload.upload ?? $upload
-      }
-
-      return @{ company=$CompanyName; from=$doc.FullName; to='Article'; result=$newDoc; Action=$(if ($null -ne $MatchedDocs){"Updated"} else {"Created"}); Global=$IsGlobalKB; }
-
-    } catch {
-      Write-Warning "Error processing '$($doc.FullName)': $($_.Exception.Message)"
-      return @{ company=$CompanyName; from=$doc.FullName; to='Error'; error=$_.Exception.Message }
+        if (-not $results.NewDoc) {
+            $results.NewDoc = if ($results.IsGlobalKB) {
+                New-HuduArticle -name $results.originalName -content "Attaching Upload"
+            } else {
+                New-HuduArticle -name $results.originalName -companyId $results.Company.id -content "Attaching Upload"
+            }
+        }
     }
-  }
+    # make sure results are unwrapped correctly irrespective of the path taken to get here
+    $results.ArticleResult = $results.NewDoc
+    $results.NewDoc = $results.NewDoc.HuduArticle ?? $results.NewDoc.article ?? $results.NewDoc            
 
+    if ($null -eq $results.NewDoc -or -not $results.NewDoc.id) {
+        $results.Error = "New Document object $($results.NewDoc | Out-String) unexpectedly came back empty"
+        Write-Error $results.Error
+        return $results
+    }
+
+    # process uploads if required
+    if ($true -eq $includeOriginals -or $true -eq $results.isScript -or $false -eq $results.AllowedToConvertFile) {
+        $existingupload = get-huduuploads | where-object {$_.uploadable_id -eq $results.NewDoc.id -and $_.uploadable_type -eq 'Article' -and ($_.name -ieq $results.OriginalDoc.Name -or $_.name -ieq $results.originalName)} | select-object -first 1; $existingupload = $existingupload.upload ?? $existingupload;
+        if ($null -ne $existingupload){
+            Write-Verbose "An existing upload (attachment) was found."
+            if ($script:CurrentHuduVersion -lt [version]("2.41.0")){
+                $results.attachmentStatus =  "Existing attachment upload found for article, but current Hudu version $script:CurrentHuduVersion does not support hash comparison. Using existing attachment/upload as-is. Update to hudu version 2.41.0 or newer to enable hash comparison."; Write-Verbose $results.attachmentStatus;
+            } else {
+                $results.AttachmentHashInfo = Compare-UploadHashWithFile -uploadId $existingupload.id -FilePath $results.OriginalDoc.FullName
+                $results.RemoteAttachmentUTCdate = (([datetime]$existingupload.created_date).add($script:DateCompareJitterHours)).ToUniversalTime()
+                $results.LocalAttachmentNewer = $results.SourceLastModified -gt $results.RemoteAttachmentUTCdate
+                if ($true -eq $results.AttachmentHashInfo.SameFile){
+                    $results.attachmentStatus = "Hashes match, skipping upload or replace"; Write-Verbose $results.attachmentStatus;
+                } else {
+                    if ($true -eq $results.LocalAttachmentNewer) {
+                        $results.attachmentStatus = "Existing attachment upload is older $($results.RemoteAttachmentUTCdate) and has different hash ($($results.AttachmentHashInfo.localHash) vs $($results.AttachmentHashInfo.UploadHash)). Deleting existing upload to replace with new version."; Write-Verbose $results.attachmentStatus;
+                        Remove-HuduUpload -id $existingupload.id -confirm:$false
+                        $existingupload = $null
+                    } else {
+                        $results.attachmentStatus = "Existing attachment upload appears newest. No need to replace."; Write-Verbose $results.attachmentStatus;
+                        $results.Upload = $existingupload
+                    }
+                }
+            }
+        } else {$results.attachmentStatus = "No existing upload found. Proceeding to upload new file."; Write-Verbose $results.attachmentStatus;}
+        $results.Upload = $existingupload ?? $(New-HuduUpload -Uploadable_Id $results.NewDoc.id -Uploadable_Type 'Article' -FilePath $results.OriginalDoc.FullName)
+        $results.Upload = $results.Upload.upload ?? $results.Upload
+    }
+    if ($false -eq $results.AllowedToConvertFile){
+        $results.NewDoc = if ($true -eq $results.IsGlobalKB) {
+            Set-HuduArticle -id $results.NewDoc.id -content "<h2>$($results.OriginalDoc.Name)</h2><br><a href='$($results.Upload.url)'>See Attached Document, $($results.OriginalDoc.Name)</a> $(Get-MetadataArticleBlock -filePath $results.OriginalDoc.FullName)"
+        } else {
+            Set-HuduArticle -id $results.NewDoc.id -companyId $results.Company.id -content "<a href='$($results.Upload.url)'>See Attached Document, $($results.OriginalDoc.Name)</a>"
+        }        
+        $results.NewDoc = $results.NewDoc.article ?? $results.NewDoc
+    }
+    $results.Result = $results.NewDoc
+    return $results
+    } catch {
+        $results.Error =  "Article from Resource Error-- $_. $($_.Exception.Message) $($_.ScriptStackTrace)"; Write-Error $results.Error
+        return $results
+    } finally {
+        $VerbosePreference = 'SilentlyContinue'
+    }
+}
+    
 function Convert-WithLibreOffice {
+    [CmdletBinding()]
     param (
         [string]$inputFile,
         [string]$outputDir,
         [string]$sofficePath
     )
+    if (-not (Test-Path -LiteralPath $inputFile)) {
+        throw "Input path does not exist: $inputFile"
+    }
+
+    $item = Get-Item -LiteralPath $inputFile -ErrorAction Stop
+    if ($item.PSIsContainer) {
+        throw "Convert-WithLibreOffice expected a file but received a directory: $inputFile"
+    }
+
+    $null = New-Item -ItemType Directory -Path $outputDir -Force
+    $loProfileBase = Join-Path ([System.IO.Path]::GetTempPath()) "itp-libreoffice-profiles"
+    $null = New-Item -ItemType Directory -Path $loProfileBase -Force
+
+    function Get-FileHeaderBytes {
+        param(
+            [Parameter(Mandatory)][string]$Path,
+            [int]$Count = 8
+        )
+
+        $buffer = New-Object byte[] $Count
+        $stream = [System.IO.File]::OpenRead($Path)
+        try {
+            $read = $stream.Read($buffer, 0, $Count)
+            if ($read -lt $Count) {
+                $shortBuffer = New-Object byte[] $read
+                [Array]::Copy($buffer, $shortBuffer, $read)
+                return $shortBuffer
+            }
+            return $buffer
+        }
+        finally {
+            $stream.Dispose()
+        }
+    }
+
+    function Test-CompoundOfficeFile {
+        param([byte[]]$Bytes)
+        return ($Bytes.Length -ge 8 -and
+            $Bytes[0] -eq 0xD0 -and $Bytes[1] -eq 0xCF -and
+            $Bytes[2] -eq 0x11 -and $Bytes[3] -eq 0xE0 -and
+            $Bytes[4] -eq 0xA1 -and $Bytes[5] -eq 0xB1 -and
+            $Bytes[6] -eq 0x1A -and $Bytes[7] -eq 0xE1)
+    }
+
+    function Test-ZipOfficeFile {
+        param([byte[]]$Bytes)
+        return ($Bytes.Length -ge 2 -and $Bytes[0] -eq 0x50 -and $Bytes[1] -eq 0x4B)
+    }
+
+    function Get-LibreOfficeInputPath {
+        param(
+            [Parameter(Mandatory)][string]$Path,
+            [Parameter(Mandatory)][string]$Directory
+        )
+
+        $ext = [System.IO.Path]::GetExtension($Path).ToLowerInvariant()
+        $base = [System.IO.Path]::GetFileNameWithoutExtension($Path)
+        $header = Get-FileHeaderBytes -Path $Path
+
+        if (Test-CompoundOfficeFile -Bytes $header) {
+            $compoundExt = switch ($ext) {
+                { $_ -in @(".doc", ".docx", ".docm", ".dot", ".dotx", ".dotm") } { ".doc"; break }
+                { $_ -in @(".xls", ".xlsx", ".xlsm", ".xlt", ".xltx", ".xltm") } { ".xls"; break }
+                { $_ -in @(".ppt", ".pptx", ".pptm", ".pot", ".potx", ".potm") } { ".ppt"; break }
+                default { $ext }
+            }
+
+            if ($compoundExt -and $compoundExt -ne $ext) {
+                $correctedPath = Join-Path $Directory "$base$compoundExt"
+                Copy-Item -LiteralPath $Path -Destination $correctedPath -Force
+                Write-Verbose "Input file has legacy Office compound-file signature but extension '$ext'. Using temporary '$compoundExt' copy for LibreOffice: $correctedPath"
+                return $correctedPath
+            }
+        } elseif (($ext -in @(".docx", ".xlsx", ".pptx", ".docm", ".xlsm", ".pptm")) -and -not (Test-ZipOfficeFile -Bytes $header)) {
+            Write-Verbose "Input extension '$ext' suggests OOXML, but file does not have a ZIP/OOXML signature."
+        }
+
+        return $Path
+    }
+
+    function Get-LoUserProfileUri {
+        param([Parameter(Mandatory)][string]$ProfilePath)
+        $resolvedProfile = [System.IO.Path]::GetFullPath($ProfilePath)
+        return ([System.Uri]$resolvedProfile).AbsoluteUri
+    }
+
+    function Find-LibreOfficeOutput {
+        param(
+            [Parameter(Mandatory)][string]$Directory,
+            [Parameter(Mandatory)][string]$BaseName,
+            [Parameter(Mandatory)][string[]]$Extensions,
+            [Parameter(Mandatory)][hashtable]$KnownFiles
+        )
+
+        $allOutputs = @(Get-ChildItem -LiteralPath $Directory -File -ErrorAction SilentlyContinue |
+            Where-Object { $Extensions -contains $_.Extension.ToLowerInvariant() })
+
+        $newOutputs = @($allOutputs | Where-Object { -not $KnownFiles.ContainsKey($_.FullName) })
+        $candidates = if ($newOutputs.Count -gt 0) { $newOutputs } else { $allOutputs }
+
+        $exact = $candidates |
+            Where-Object { $_.BaseName -ieq $BaseName } |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -First 1
+        if ($exact) { return $exact.FullName }
+
+        return ($candidates |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -First 1).FullName
+    }
+
+    function Invoke-LibreOfficeConvert {
+        param(
+            [Parameter(Mandatory)][string]$SourcePath,
+            [Parameter(Mandatory)][string]$Format,
+            [Parameter(Mandatory)][string[]]$ExpectedExtensions,
+            [Parameter(Mandatory)][string]$Description
+        )
+
+        $sourceItem = Get-Item -LiteralPath $SourcePath -ErrorAction Stop
+        $sourceBaseName = [System.IO.Path]::GetFileNameWithoutExtension($sourceItem.Name)
+        $knownFiles = @{}
+        Get-ChildItem -LiteralPath $outputDir -File -ErrorAction SilentlyContinue | ForEach-Object {
+            $knownFiles[$_.FullName] = $true
+        }
+
+        $profilePath = Join-Path $loProfileBase ("lo-profile-" + [guid]::NewGuid().ToString())
+        $null = New-Item -ItemType Directory -Path $profilePath -Force
+        $profileUri = Get-LoUserProfileUri -ProfilePath $profilePath
+
+        $args = @(
+            "--headless",
+            "--invisible",
+            "--nodefault",
+            "--nolockcheck",
+            "--nologo",
+            "--nofirststartwizard",
+            "-env:UserInstallation=$profileUri",
+            "--convert-to",
+            $Format,
+            "--outdir",
+            $outputDir,
+            $SourcePath
+        )
+
+        Write-Verbose "LibreOffice $Description`: $([System.IO.Path]::GetFileName($SourcePath)) -> $Format"
+
+        $psi = [System.Diagnostics.ProcessStartInfo]::new()
+        $psi.FileName = $sofficePath
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+        foreach ($arg in $args) {
+            [void]$psi.ArgumentList.Add($arg)
+        }
+
+        $process = [System.Diagnostics.Process]::Start($psi)
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit(180000)) {
+            try { $process.Kill($true) } catch {}
+            try { Remove-Item -LiteralPath $profilePath -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+            Write-Verbose "LibreOffice $Description timed out after 180 seconds."
+            return $null
+        }
+        $stdout = $stdoutTask.GetAwaiter().GetResult()
+        $stderr = $stderrTask.GetAwaiter().GetResult()
+
+        $converted = Find-LibreOfficeOutput -Directory $outputDir -BaseName $sourceBaseName -Extensions $ExpectedExtensions -KnownFiles $knownFiles
+        if ($converted -and (Test-Path -LiteralPath $converted)) {
+            Write-Verbose "LibreOffice $Description produced $converted"
+            try { Remove-Item -LiteralPath $profilePath -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+            return $converted
+        }
+
+        Write-Verbose "LibreOffice $Description produced no expected output. ExitCode=$($process.ExitCode)"
+        if (-not [string]::IsNullOrWhiteSpace($stdout)) { Write-Verbose "LibreOffice stdout: $stdout" }
+        if (-not [string]::IsNullOrWhiteSpace($stderr)) { Write-Verbose "LibreOffice stderr: $stderr" }
+        try { Remove-Item -LiteralPath $profilePath -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+        return $null
+    }
 
     try {
+        $inputFile = Get-LibreOfficeInputPath -Path $inputFile -Directory $outputDir
         $extension = [System.IO.Path]::GetExtension($inputFile).ToLowerInvariant()
         $baseName = [System.IO.Path]::GetFileNameWithoutExtension($inputFile)
 
@@ -1128,38 +1579,63 @@ function Convert-WithLibreOffice {
 
             default { $intermediateExt = $null }
         }
+
+        $directXhtml = Invoke-LibreOfficeConvert `
+            -SourcePath $inputFile `
+            -Format "xhtml" `
+            -ExpectedExtensions @(".xhtml", ".html", ".htm") `
+            -Description "direct XHTML conversion"
+        if ($directXhtml) { return $directXhtml }
+
+        $directHtml = Invoke-LibreOfficeConvert `
+            -SourcePath $inputFile `
+            -Format "html" `
+            -ExpectedExtensions @(".html", ".htm", ".xhtml") `
+            -Description "direct HTML conversion"
+        if ($directHtml) { return $directHtml }
+
         if ($intermediateExt) {
             $intermediatePath = Join-Path $outputDir "$baseName.$intermediateExt"
-            write-host "Step 1: Converting to .$intermediateExt..." 
+            Write-Verbose "Step 1 fallback: Converting to .$intermediateExt..."
 
-            Start-Process -FilePath "$sofficePath" `
-                -ArgumentList "--headless", "--convert-to", $intermediateExt, "--outdir", "`"$outputDir`"", "`"$inputFile`"" `
-                -Wait -NoNewWindow
+            $intermediateOutput = Invoke-LibreOfficeConvert `
+                -SourcePath $inputFile `
+                -Format $intermediateExt `
+                -ExpectedExtensions @(".$intermediateExt") `
+                -Description "intermediate .$intermediateExt conversion"
 
-            if (-not (Test-Path $intermediatePath)) {
-                throw "$intermediateExt conversion failed for $inputFile"
+            if ($intermediateOutput -and (Test-Path -LiteralPath $intermediateOutput)) {
+                $intermediatePath = $intermediateOutput
+            } else {
+                Write-Verbose "$intermediateExt conversion failed for $inputFile"
+                return $null
             }
         } else {
             # No conversion needed
             $intermediatePath = $inputFile
         }
 
-        write-host "Step $(if ($intermediateExt) {'2'} else {'1'}): Converting .$intermediateExt to XHTML..."
+        Write-Verbose "Step $(if ($intermediateExt) {'2 fallback'} else {'1 fallback'}): Converting intermediate to XHTML..."
 
-        Start-Process -FilePath "$sofficePath" `
-            -ArgumentList "--headless", "--convert-to", "xhtml", "--outdir", "`"$outputDir`"", "`"$intermediatePath`"" `
-            -Wait -NoNewWindow
+        $fallbackXhtml = Invoke-LibreOfficeConvert `
+            -SourcePath $intermediatePath `
+            -Format "xhtml" `
+            -ExpectedExtensions @(".xhtml", ".html", ".htm") `
+            -Description "intermediate XHTML conversion"
+        if ($fallbackXhtml) { return $fallbackXhtml }
 
-        $htmlPath = Join-Path $outputDir "$baseName.xhtml"
+        $fallbackHtml = Invoke-LibreOfficeConvert `
+            -SourcePath $intermediatePath `
+            -Format "html" `
+            -ExpectedExtensions @(".html", ".htm", ".xhtml") `
+            -Description "intermediate HTML conversion"
+        if ($fallbackHtml) { return $fallbackHtml }
 
-        if (-not (Test-Path $htmlPath)) {
-            throw "XHTML conversion failed for $intermediatePath"
-        }
-
-        return $htmlPath
+        Write-Verbose "LibreOffice conversion failed for $inputFile; no HTML output found."
+        return $null
     }
     catch {
-       write-host $_
+       Write-Verbose $_
         return $null
     }
 }
@@ -1285,7 +1761,7 @@ function Convert-PdfXmlToHtml {
 
     $html += '</body></html>'
     Set-Content -Path $OutputHtmlPath -Value ($html -join "`n") -Encoding UTF8
-    Set-PrintAndLog -message  "Generated slim HTML: $OutputHtmlPath" -Color Green
+    Set-PrintAndLog -message  "Generated slim HTML: $OutputHtmlPath"
 }
 function Convert-PdfToHtml {
     param (
@@ -1348,7 +1824,745 @@ function Save-Base64ToFile {
     $bytes = [System.Convert]::FromBase64String($Base64String)
     [System.IO.File]::WriteAllBytes($OutputPath, $bytes)
 
-    Set-PrintAndLog -message  "Saved Base64 content to: $OutputPath" -Color Cyan
+    Set-PrintAndLog -message  "Saved Base64 content to: $OutputPath"
+}
+
+
+function Get-FileMagicBytes {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+
+        [int]$Count = 16
+    )
+
+    $fs = [System.IO.File]::OpenRead($Path)
+    try {
+        $buffer = New-Object byte[] $Count
+        $fs.Read($buffer, 0, $Count) | Out-Null
+        return $buffer
+    }
+    finally {
+        $fs.Dispose()
+    }
+}
+function Test-IsPdf {
+    param($Bytes)
+
+    # %PDF-
+    return ($Bytes[0] -eq 0x25 -and
+            $Bytes[1] -eq 0x50 -and
+            $Bytes[2] -eq 0x44 -and
+            $Bytes[3] -eq 0x46 -and
+            $Bytes[4] -eq 0x2D)
+}
+function Test-IsDocx {
+    param([string]$Path, $Bytes)
+
+    # ZIP header
+    if (-not ($Bytes[0] -eq 0x50 -and $Bytes[1] -eq 0x4B)) {
+        return $false
+    }
+
+    try {
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($Path)
+        $found = $zip.Entries | Where-Object { $_.FullName -ieq 'word/document.xml' }
+        return [bool]$found
+    }
+    catch {
+        return $false
+    }
+    finally {
+        if ($zip) { $zip.Dispose() }
+    }
+}
+function Test-IsPlainText {
+    param([string]$Path)
+
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+
+    # Reject if NULL bytes found
+    if ($bytes -contains 0) { return $false }
+
+    try {
+        [System.Text.Encoding]::UTF8.GetString($bytes) | Out-Null
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+function Get-FileType {
+    param([string]$Path)
+
+    $magic = Get-FileMagicBytes $Path
+
+    if (Test-IsPdf $magic) {
+        return 'PDF'
+    }
+
+    if (Test-IsDocx $Path $magic) {
+        return 'DOCX'
+    }
+
+    if (Test-IsPlainText $Path) {
+        return 'PlainText'
+    }
+
+    return 'UnknownBinary'
+}
+
+
+function Normalize-Text {
+    param([string]$s)
+    if ([string]::IsNullOrWhiteSpace($s)) { return $null }
+    $s = $s.Trim().ToLowerInvariant()
+    $s = [regex]::Replace($s, '[\s_-]+', ' ')  # "primary_email" -> "primary email"
+    # strip diacritics (prénom -> prenom)
+    $formD = $s.Normalize([System.Text.NormalizationForm]::FormD)
+    $sb = New-Object System.Text.StringBuilder
+    foreach ($ch in $formD.ToCharArray()){
+        if ([System.Globalization.CharUnicodeInfo]::GetUnicodeCategory($ch) -ne
+            [System.Globalization.UnicodeCategory]::NonSpacingMark) { [void]$sb.Append($ch) }
+    }
+    ($sb.ToString()).Normalize([System.Text.NormalizationForm]::FormC)
+}
+
+function Remove-NullHashtableValues {
+    param([hashtable]$Hashtable)
+
+    foreach ($key in $Hashtable.Keys.Clone()) {
+        if ($null -eq $Hashtable[$key]) {
+            $Hashtable.Remove($key)
+        }
+    }
+
+    return $Hashtable
+}
+
+function Remove-EmptyPSObjectProperties {
+    param(
+        [Parameter(Mandatory)]
+        [psobject]$InputObject
+    )
+
+    $out = [pscustomobject]@{}
+
+    foreach ($prop in $InputObject.PSObject.Properties) {
+        $value = $prop.Value
+
+        $isEmpty = (
+            $null -eq $value -or
+            ($value -is [string] -and [string]::IsNullOrWhiteSpace($value)) -or
+            ($value -is [System.Collections.ICollection] -and $value.Count -eq 0)
+        )
+
+        if (-not $isEmpty) {
+            $out | Add-Member -NotePropertyName $prop.Name -NotePropertyValue $value
+        }
+    }
+
+    return $out
+}
+
+function Get-MetadataArticleBlock {
+    param ([string]$filePath)
+    $file = Get-Item -LiteralPath $filePath
+    $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+    $html = @"
+<div>
+<b>Metadata</b>
+<ul>
+  <li>Original Filename: $($file.Name)</li>
+  <li>Source Directory: $($file.DirectoryName)</li>
+  <li>FileHash (SHA256): $hash</li>
+  <li>Last Modified (UTC): $($file.LastWriteTimeUtc)</li>
+</ul>
+</div>
+"@
+    return $html
+}
+
+function Write-ObjectNonNullProperties {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [psobject]$InputObject,
+
+        [string]$Title = $null
+    )
+
+    if ($Title) {
+        Write-Host "`n=== $Title ===" -ForegroundColor Cyan
+    }
+
+    foreach ($prop in $InputObject.PSObject.Properties) {
+        $value = $prop.Value
+
+        $isEmpty = (
+            $null -eq $value -or
+            ($value -is [string] -and [string]::IsNullOrWhiteSpace($value)) -or
+            ($value -is [System.Collections.ICollection] -and $value.Count -eq 0)
+        )
+
+        if (-not $isEmpty) {
+            Write-Host ("{0,-24}: {1}" -f $prop.Name, $value) -ForegroundColor Gray
+        }
+    }
+}
+function Write-InspectObject {
+    param (
+        [object]$object,
+        [int]$Depth = 32,
+        [int]$MaxLines = 16
+    )
+    $stringifiedObject = $null
+    if ($null -eq $object) {
+        return "Unreadable Object (null input)"
+    }
+    # Try JSON
+    $stringifiedObject = try {
+        $json = $object | ConvertTo-Json -Depth $Depth -ErrorAction Stop
+        "# Type: $($object.GetType().FullName)`n$json"
+    } catch { $null }
+    # Try Format-Table
+    if (-not $stringifiedObject) {
+        $stringifiedObject = try {
+            $object | Format-Table -Force | Out-String
+        } catch { $null }
+    }
+    # Try Format-List
+    if (-not $stringifiedObject) {
+        $stringifiedObject = try {
+            $object | Format-List -Force | Out-String
+        } catch { $null }
+    }
+    # Fallback to manual property dump
+    if (-not $stringifiedObject) {
+        $stringifiedObject = try {
+            $props = $object | Get-Member -MemberType Properties | Select-Object -ExpandProperty Name
+            $lines = foreach ($p in $props) {
+                try {
+                    "$p = $($object.$p)"
+                } catch {
+                    "$p = <unreadable>"
+                }
+            }
+            "# Type: $($object.GetType().FullName)`n" + ($lines -join "`n")
+        } catch {
+            "Unreadable Object"
+        }
+    }
+    if (-not $stringifiedObject) {
+        $stringifiedObject =  try {"$($($object).ToString())"} catch {$null}
+    }
+    # Truncate to max lines if necessary
+    $lines = $stringifiedObject -split "`r?`n"
+    if ($lines.Count -gt $MaxLines) {
+        $lines = $lines[0..($MaxLines - 1)] + "... (truncated)"
+    }
+    return $lines -join "`n"
+}
+function Get-HTMLTemplatedScriptContent {
+
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory)]
+        [ValidateScript({ Test-Path $_ -PathType Leaf })]
+        [string]$FilePath,
+
+        [string]$Heading,
+
+        [string]$OutputPath
+    )
+
+    $file = Get-Item -LiteralPath $FilePath -ErrorAction Stop
+
+    if (-not $Heading) {
+        $Heading = "$($file.Name) - $($file.Extension) Script"
+    }
+
+    $content = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8
+    $encoded = [System.Net.WebUtility]::HtmlEncode($content)
+
+    $html = @"
+<h2>$Heading</h2>
+<pre><code>$encoded</code></pre>
+<hr>
+$(Get-MetadataArticleBlock -filePath $file.FullName)
+"@
+
+    if ($OutputPath) {
+
+        $dir = Split-Path $OutputPath -Parent
+        if (-not (Test-Path $dir)) {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        }
+
+        [IO.File]::WriteAllText($OutputPath, $html, [Text.UTF8Encoding]::new($false))
+    }
+
+    return $html
+}
+
+function Compare-UploadHashWithFile {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [int]$UploadId,
+
+        [Parameter(Mandatory)]
+        [ValidateScript({ Test-Path $_ -PathType Leaf })]
+        [Alias('path','file','localpath','filepath')]
+        [string]$LocalFile
+    )
+
+    $tempDir = (Get-EnsuredPath -Path (Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid())))
+
+    try {
+        $uploadEntry = Get-HuduUploads -Download -Id $UploadId -OutDir $tempDir
+        $uploadEntry = $uploadEntry.Upload ?? $uploadEntry
+        $localHash  = (Get-FileHash -LiteralPath (Resolve-Path $LocalFile).Path       -Algorithm SHA256).Hash
+        if ([string]::isnullorempty($uploadEntry.LocalPath) -or [string]::isnullorempty($localHash)){
+            return @{SameFile = $false; LocalHash = $localHash; uploadHash = $null }
+        }
+
+        $uploadHash = (Get-FileHash -LiteralPath (Resolve-Path $uploadEntry.LocalPath).Path -Algorithm SHA256).Hash
+        $samefile = [bool]$("$uploadHash" -ieq "$localHash")
+        if ($false -eq $samefile) {
+            write-verbose "Hash mismatch between local file and existing upload (UploadId: $UploadId). Local: $localHash, Upload: $uploadHash"
+        }
+
+
+        @{
+            SameFile   = $samefile
+            UploadHash = $uploadHash
+            LocalHash  = $localHash
+        }
+    }
+    finally {
+        if ($tempDir -and (Test-Path -LiteralPath $tempDir)) {
+            Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Compare-StringsIgnoring {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string]$A,
+        [Parameter(Mandatory)] [string]$B,
+        $ignore = @(
+                '\bthe\b',
+                '\borg\b',
+                '\binc\b',
+                '\bpc\b',
+                '\band\b',
+                '\bltd\b',
+                '[\.,/&]'
+            ))
+    function _Normalize($s) {
+
+        if (-not $s) { return '' }
+        $t = Normalize-Text $s
+        $t = $t -replace '\p{P}+', ''
+
+        foreach ($pattern in $ignore) {
+            $t = $t -replace $pattern, ''
+        }
+        $t = ($t -replace '\s+', ' ').Trim()
+        return $t
+    }
+
+    $normA = _Normalize $A
+    $normB = _Normalize $B
+
+    return ($normA -eq $normB)
+}
+
+function Get-Similarity {
+    param([string]$A, [string]$B)
+
+    $a = [string](Normalize-Text $A)
+    $b = [string](Normalize-Text $B)
+    if ([string]::IsNullOrEmpty($a) -and [string]::IsNullOrEmpty($b)) { return 1.0 }
+    if ([string]::IsNullOrEmpty($a) -or  [string]::IsNullOrEmpty($b))  { return 0.0 }
+
+    $n = [int]$a.Length
+    $m = [int]$b.Length
+    if ($n -eq 0) { return [double]($m -eq 0) }
+    if ($m -eq 0) { return 0.0 }
+
+    $d = New-Object 'int[,]' ($n+1), ($m+1)
+    for ($i = 0; $i -le $n; $i++) { $d[$i,0] = $i }
+    for ($j = 0; $j -le $m; $j++) { $d[0,$j] = $j }
+
+    for ($i = 1; $i -le $n; $i++) {
+        $im1 = ([int]$i) - 1
+        $ai  = $a[$im1]
+        for ($j = 1; $j -le $m; $j++) {
+            $jm1 = ([int]$j) - 1
+            $cost = if ($ai -eq $b[$jm1]) { 0 } else { 1 }
+
+            $del = [int]$d[$i,  $j]   + 1
+            $ins = [int]$d[$i,  $jm1] + 1
+            $sub = [int]$d[$im1,$jm1] + $cost
+
+            $d[$i,$j] = [Math]::Min($del, [Math]::Min($ins, $sub))
+        }
+    }
+
+    $dist   = [double]$d[$n,$m]
+    $maxLen = [double][Math]::Max($n,$m)
+    return 1.0 - ($dist / $maxLen)
+}
+function Get-SimilaritySafe { param([string]$A,[string]$B)
+    if ([string]::IsNullOrWhiteSpace($A) -or [string]::IsNullOrWhiteSpace($B)) { return 0.0 }
+    $score = Get-Similarity $A $B
+    write-verbose "$a ... $b SCORED $score"
+    return $score
+}
+
+function ChoseBest-ByName {
+    param ([string]$Name,[array]$choices,[string]$prop='name')
+$validChoices = $choices | where-object {-not $([string]::IsNullOrEmpty($_.$prop))}
+return $($validChoices | ForEach-Object {
+[pscustomobject]@{Choice = $_; Score  = $(Get-SimilaritySafe -a "$Name" -b $_.$prop);}} | where-object {$_.Score -ge 0.97} | Sort-Object Score -Descending | select-object -First 1).Choice
+}
+function Export-DocPropertyJson {
+    param (
+        [Parameter(Mandatory)][PSCustomObject]$Doc,
+        [Parameter(Mandatory)][string]$Property,
+        [int]$Depth = 45
+    )
+
+    if (-not ($Doc.PSObject.Properties.Name -contains $Property)) {
+        throw "Property '$Property' does not exist on the provided document object."
+    }
+
+    $value = $Doc.$Property
+
+    $dir  = [System.IO.Path]::GetDirectoryName($Doc.LocalPath)
+    $base = [System.IO.Path]::GetFileNameWithoutExtension($Doc.LocalPath)
+    $outPath = [System.IO.Path]::Combine($dir, "$base-$($Property.ToLower()).json")
+
+    $value | ConvertTo-Json -Depth $Depth | Out-File -FilePath $outPath -Encoding UTF8
+
+    return $outPath
+}
+function Get-EnsuredPath {
+    param([string]$path)
+    $outpath = if (-not $path -or [string]::IsNullOrWhiteSpace($path)) { $(join-path $(Resolve-Path .).path "debug") } else {$path}
+    if (-not (Test-Path $outpath)) {
+        Get-ChildItem -Path "$outpath" -File -Recurse -Force | Remove-Item -Force
+        New-Item -ItemType Directory -Path $outpath -Force -ErrorAction Stop | Out-Null
+        write-verbose "path is now present: $outpath"
+    } else {write-verbose "path is present: $outpath"}
+    return $outpath
+}
+
+function Write-ErrorObjectsToFile {
+    param (
+        [Parameter(Mandatory)]
+        [object]$ErrorObject,
+
+        [Parameter()]
+        [string]$Name = "unnamed",
+
+        [Parameter()]
+        [ValidateSet("Black","DarkBlue","DarkGreen","DarkCyan","DarkRed","DarkMagenta","DarkYellow","Gray","DarkGray","Blue","Green","Cyan","Red","Magenta","Yellow","White")]
+        [string]$Color
+    )
+
+    $stringOutput = try {
+        $ErrorObject | Format-List -Force | Out-String
+    } catch {
+        "Failed to stringify object: $_"
+    }
+
+    $propertyDump = try {
+        $props = $ErrorObject | Get-Member -MemberType Properties | Select-Object -ExpandProperty Name
+        $lines = foreach ($p in $props) {
+            try {
+                "$p = $($ErrorObject.$p)"
+            } catch {
+                "$p = <unreadable>"
+            }
+        }
+        $lines -join "`n"
+    } catch {
+        "Failed to enumerate properties: $_"
+    }
+
+    $logContent = @"
+==== OBJECT STRING ====
+$stringOutput
+
+==== PROPERTY DUMP ====
+$propertyDump
+"@
+
+    if ($ErroredItemsFolder -and (Test-Path $ErroredItemsFolder)) {
+        $SafeName = ($Name -replace '[\\/:*?"<>|]', '_') -replace '\s+', ''
+        if ($SafeName.Length -gt 60) {
+            $SafeName = $SafeName.Substring(0, 60)
+        }
+        $filename = "${SafeName}_error_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+        $fullPath = Join-Path $ErroredItemsFolder $filename
+        Set-Content -Path $fullPath -Value $logContent -Encoding UTF8
+        if ($Color) {
+            write-verbose "Error written to $fullPath"
+        } else {
+            write-verbose "Error written to $fullPath"
+        }
+    }
+
+        write-verbose "$logContent"
+}
+
+
+function Save-HtmlSnapshot {
+    param (
+        [Parameter(Mandatory)][string]$PageId,
+        [Parameter(Mandatory)][string]$Title,
+        [Parameter(Mandatory)][string]$Content,
+        [Parameter(Mandatory)][string]$Suffix,
+        [Parameter(Mandatory)][string]$OutDir
+    )
+
+    $safeTitle = ($Title -replace '[^\w\d\-]', '_') -replace '_+', '_'
+    $filename = "${PageId}_${safeTitle}_${Suffix}.html"
+    $path = Join-Path -Path $OutDir -ChildPath $filename
+
+    try {
+        $Content | Out-File -FilePath $path -Encoding UTF8
+        write-verbose "Saved HTML snapshot: $path"
+    } catch {
+        Write-ErrorObjectsToFile -Name "$($_.safeTitle ?? "unnamed")" -ErrorObject @{
+            Error       = $_
+            PageId      = $PageId 
+            Content     = $Content
+            Message     ="Error Saving HTML Snapshot"
+            OutDir      = $OutDir
+        }
+    }
+}
+function Get-PercentDone {
+    param (
+        [int]$Current,
+        [int]$Total
+    )
+    if ($Total -eq 0) {
+        return 100}
+    $percentDone = ($Current / $Total) * 100
+    if ($percentDone -gt 100){
+        return 100
+    }
+    $rounded = [Math]::Round($percentDone, 2)
+    return $rounded
+}   
+function Set-PrintAndLog {
+    param (
+        [string]$message,
+        [Parameter()]
+        [Alias("ForegroundColor")]
+        [ValidateSet("Black","DarkBlue","DarkGreen","DarkCyan","DarkRed","DarkMagenta","DarkYellow","Gray","DarkGray","Blue","Green","Cyan","Red","Magenta","Yellow","White")]
+        [string]$Color
+    )
+    $logline = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $message"
+    if ($Color) {
+        write-verbose $logline
+    } else {
+        write-verbose $logline
+    }
+    Add-Content -Path $LogFile -Value $logline
+}
+function Select-ObjectFromList($objects, $message, $inspectObjects = $false, $allowNull = $false) {
+    $validated = $false
+    while (-not $validated) {
+        if ($allowNull) {
+            Write-Host "0: None/Custom"
+        }
+
+        for ($i = 0; $i -lt $objects.Count; $i++) {
+            $object = $objects[$i]
+
+            $displayLine = if ($inspectObjects) {
+                "$($i+1): $(Write-InspectObject -object $object)"
+            } elseif ($null -ne $object.OptionMessage) {
+                "$($i+1): $($object.OptionMessage)"
+            } elseif ($null -ne $object.name) {
+                "$($i+1): $($object.name)"
+            } else {
+                "$($i+1): $($object)"
+            }
+
+            Write-Host $displayLine -ForegroundColor $(if ($i % 2 -eq 0) { 'Cyan' } else { 'Yellow' })
+        }
+
+        $choice = Read-Host $message
+
+        if (-not ($choice -as [int])) {
+            Write-Host "Invalid input. Please enter a number." -ForegroundColor Red
+            continue
+        }
+
+        $choice = [int]$choice
+
+        if ($choice -eq 0 -and $allowNull) {
+            return $null
+        }
+
+        if ($choice -ge 1 -and $choice -le $objects.Count) {
+            return $objects[$choice - 1]
+        } else {
+            Write-Host "Invalid selection. Please enter a number from the list." -ForegroundColor Red
+        }
+    }
+}
+function Get-YesNoResponse($message) {
+    do {
+        $response = Read-Host "$message (y/n)"
+        $response = if($null -ne $response) {$response.ToLower()} else {""}
+        if ($response -eq 'y' -or $response -eq 'yes') {
+            return $true
+        } elseif ($response -eq 'n' -or $response -eq 'no') {
+            return $false
+        } else {
+            Set-PrintAndLog -message "Invalid input. Please enter 'y' for Yes or 'n' for No."
+        }
+    }
+    while ($true)
+}
+
+function Get-ArticlePreviewBlock {
+    param (
+        [string]$Title,
+        [string]$docId,
+        [string]$Content,
+        [int]$MaxLength = 200
+    )
+    $descriptor = "ID: $docId, titled $Title"
+    $snippet = if ($Content.Length -gt $MaxLength) {
+        $Content.Substring(0, $MaxLength) + "..."
+    } else {
+        $Content
+    }
+
+@"
+Mapping Sharepoint Page $descriptor ---
+Title: $Title
+Snippet: $snippet
+"@
+}
+
+
+function Get-SafeFilename {
+    param([string]$Name,
+        [int]$MaxLength=25
+    )
+
+    # If there's a '?', take only the part before it
+    $BaseName = $Name -split '\?' | Select-Object -First 1
+
+    # Extract extension (including the dot), if present
+    $Extension = [System.IO.Path]::GetExtension($BaseName)
+    $NameWithoutExt = [System.IO.Path]::GetFileNameWithoutExtension($BaseName)
+
+    # Sanitize name and extension
+    $SafeName = $NameWithoutExt -replace '[\\\/:*?"<>|]', '_'
+    $SafeExt = $Extension -replace '[\\\/:*?"<>|]', '_'
+
+    # Truncate base name to 25 chars
+    if ($SafeName.Length -gt $MaxLength) {
+        $SafeName = $SafeName.Substring(0, $MaxLength)
+    }
+
+    return "$SafeName$SafeExt"
+}
+function New-HuduStubArticle {
+    param (
+        [string]$Title,
+        [string]$Content,
+        [nullable[int]]$CompanyId,
+        [nullable[int]]$FolderId
+    )
+
+    $params = @{
+        Name    = $Title
+        Content = $Content
+    }
+
+    if ($CompanyId -ne $null -and $CompanyId -ne -1) {
+        $params.CompanyId = $CompanyId
+    }
+
+    if ($FolderId -ne $null -and $FolderId -ne 0) {
+        $params.FolderId = $FolderId
+    }
+
+    return (New-HuduArticle @params).article
+}
+
+function Get-SafeTitle {
+    param ([string]$Name)
+
+    if (-not $Name) {
+        return "untitled"
+    }
+    $baseName = [System.IO.Path]::GetFileNameWithoutExtension($Name)
+    $decoded = [uri]::UnescapeDataString($baseName)
+    $safe = $decoded -replace '[\\/:*?"<>|]', ' '
+    $safe = ($safe -replace '\s{2,}', ' ').Trim()
+    return $safe
+}
+
+function Test-Equiv {
+    param([string]$A, [string]$B)
+    $a = Normalize-Text $A; $b = Normalize-Text $B
+    if (-not $a -or -not $b) { return $false }
+    if ($a -eq $b) { return $true }
+    $reA = "(^| )$([regex]::Escape($a))( |$)"
+    $reB = "(^| )$([regex]::Escape($b))( |$)"
+    if ($b -match $reA -or $a -match $reB) { return $true } 
+    if ($a.Replace(' ', '') -eq $b.Replace(' ', '')) { return $true }
+    return $false
+}
+function Get-Similarity {
+    param([string]$A, [string]$B)
+
+    $a = [string](Normalize-Text $A)
+    $b = [string](Normalize-Text $B)
+    if ([string]::IsNullOrEmpty($a) -and [string]::IsNullOrEmpty($b)) { return 1.0 }
+    if ([string]::IsNullOrEmpty($a) -or  [string]::IsNullOrEmpty($b))  { return 0.0 }
+
+    $n = [int]$a.Length
+    $m = [int]$b.Length
+    if ($n -eq 0) { return [double]($m -eq 0) }
+    if ($m -eq 0) { return 0.0 }
+
+    $d = New-Object 'int[,]' ($n+1), ($m+1)
+    for ($i = 0; $i -le $n; $i++) { $d[$i,0] = $i }
+    for ($j = 0; $j -le $m; $j++) { $d[0,$j] = $j }
+
+    for ($i = 1; $i -le $n; $i++) {
+        $im1 = ([int]$i) - 1
+        $ai  = $a[$im1]
+        for ($j = 1; $j -le $m; $j++) {
+            $jm1 = ([int]$j) - 1
+            $cost = if ($ai -eq $b[$jm1]) { 0 } else { 1 }
+
+            $del = [int]$d[$i,  $j]   + 1
+            $ins = [int]$d[$i,  $jm1] + 1
+            $sub = [int]$d[$im1,$jm1] + $cost
+
+            $d[$i,$j] = [Math]::Min($del, [Math]::Min($ins, $sub))
+        }
+    }
+
+    $dist   = [double]$d[$n,$m]
+    $maxLen = [double][Math]::Max($n,$m)
+    return 1.0 - ($dist / $maxLen)
 }
 
 function Get-LatestLibreURI {
