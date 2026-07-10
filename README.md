@@ -8,7 +8,7 @@ Seamlessly migrate data, documents, and knowledge from ITPortal into Hudu.
 
 ## Requirements
 
-- Hudu v2.39.6+
+- Hudu v2.43.1+
 - Hudu API Key
 - ITPortal CSV Export
 - PowerShell 7.5.1+ on Windows Machine
