@@ -21,8 +21,8 @@ $jobs = @(
 "Wrap-Up"
 )
 
-    $exportLocation = $exportLocation ?? (Read-Host "please enter the full path to your export.")
-    $hudubaseUrl    = $hudubaseUrl    ?? (Read-Host "please enter the hudubase url.")
+$exportLocation = $exportLocation ?? (Read-Host "please enter the full path to your export.")
+$hudubaseUrl    = $hudubaseUrl    ?? (Read-Host "please enter the hudubase url.")
 $huduapikey     = $huduapikey     ?? (Read-Host "please enter your hudu api key.")
 
 if (-not (Test-Path -Path $exportLocation)) {
@@ -38,6 +38,7 @@ $MigrationErrors = @()
 foreach ($f in $(Get-ChildItem "$project_workdir\helpers" -Filter *.ps1)) {. $f.FullName}
  Get-PSVersionCompatible; Set-HuduModuleInitialized -hudubaseurl $huduBaseurl -huduapikey $huduAPIkey;
  Get-EnsuredPath $debugDir | Out-Null
+ try {$migrationRecord = Set-MigrationRecord} catch {}
  $internalCompany = Get-OrSetInternalCompany -internalCompanyName $internalCompanyName
 
  foreach ($job in $jobs){
