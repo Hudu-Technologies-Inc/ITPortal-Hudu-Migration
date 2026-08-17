@@ -37,6 +37,7 @@ $MigrationErrors = @()
 
 foreach ($f in $(Get-ChildItem "$project_workdir\helpers" -Filter *.ps1)) {. $f.FullName}
  Get-PSVersionCompatible; Set-HuduModuleInitialized -hudubaseurl $huduBaseurl -huduapikey $huduAPIkey;
+ $currentVersionResult = [version]$((get-huduappinfo).version); $DisallowedVersions = @([version]("2.37.0"), [version]("2.44.3")); if ($DisallowedVersions -contains [version]($currentVersionResult)) {write-host "disallowed version $($currentVersionResult); Please upgrade or downgrade if possible first." -ForegroundColor Red; exit 1;} else {write-host "$($currentVersionResult) is allowed!" -ForegroundColor Green}; 
  Get-EnsuredPath $debugDir | Out-Null
  try {$migrationRecord = Set-MigrationRecord} catch {}
  $internalCompany = Get-OrSetInternalCompany -internalCompanyName $internalCompanyName
