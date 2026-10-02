@@ -168,7 +168,7 @@ foreach ($key in $orderedKeys | where-object {$_ -notin $SkipTables -and $_ -not
 
     $layoutRequest = @{
          Name   = "$ITPPrefix$key"; Fields = @();
-         icon="fas fa-person"; color="#6136ff"; icon_color="#ffffff"; include_passwords=$true; include_photos=$true; include_comments=$true; include_files=$true;
+         icon="$(find-fontawesomeicon -search $key)"; color="#6136ff"; icon_color="#ffffff"; include_passwords=$true; include_photos=$true; include_comments=$true; include_files=$true;
     }
 
     #designate fields
